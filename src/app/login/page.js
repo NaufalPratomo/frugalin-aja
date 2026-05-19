@@ -1,16 +1,31 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function LoginPage() {
+  const { data: session, status } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const router = useRouter();
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/dashboard");
+    }
+  }, [status, router]);
+
+  if (status === "loading") {
+    return (
+      <div className="grid place-items-center h-screen bg-gradient-to-b from-green-50 to-white text-gray-500 text-sm font-semibold">
+        Menyelaraskan dompet digital...
+      </div>
+    );
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

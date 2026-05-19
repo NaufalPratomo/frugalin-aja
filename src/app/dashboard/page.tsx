@@ -55,6 +55,13 @@ export default function DashboardPage() {
   // Limit Budget state
   const [newLimitValue, setNewLimitValue] = useState("");
 
+  // PWA & Hamburger Menu states
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showPwaGuideModal, setShowPwaGuideModal] = useState(false);
+
   const fetchData = async () => {
     try {
       const resAcc = await fetch("/api/accounts");
@@ -93,6 +100,39 @@ export default function DashboardPage() {
       fetchData();
     }
   }, [status]);
+
+  useEffect(() => {
+    // Cek jika aplikasi berjalan dalam mode standalone PWA
+    const checkStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
+    setIsStandalone(!!checkStandalone);
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) {
+      setShowPwaGuideModal(true);
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      console.log("User accepted PWA installation");
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+      setIsStandalone(true);
+    }
+  };
 
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,14 +228,86 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-gray-800 antialiased">
       
       {/* HEADER */}
-      <div className="max-w-6xl mx-auto flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6">
+      <div className="max-w-6xl mx-auto flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6 relative">
         <div>
           <p className="text-xs text-gray-400 font-medium">Selamat Datang,</p>
           <h2 className="text-lg font-bold text-gray-900">{session?.user?.name}</h2>
         </div>
-        <button onClick={() => signOut()} className="px-4 py-2 bg-gray-100 hover:bg-red-50 hover:text-red-600 font-semibold rounded-xl text-xs transition-all cursor-pointer">
-          Keluar
-        </button>
+        
+        <div className="relative">
+          <button 
+            onClick={() => setShowMenu(!showMenu)} 
+            className="p-2.5 bg-gray-50 hover:bg-green-50 text-gray-600 hover:text-green-700 rounded-xl transition-all border border-gray-100 hover:border-green-200 cursor-pointer flex items-center justify-center"
+            title="Menu"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+              {showMenu ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              )}
+            </svg>
+          </button>
+
+          {/* DROPDOWN MENU */}
+          {showMenu && (
+            <>
+              {/* Back-drop to close menu when clicking outside */}
+              <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+              
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-3 z-20 animate-in fade-in slide-in-from-top-3 duration-200">
+                {/* User Info */}
+                <div className="px-4 py-2 border-b border-gray-50">
+                  <p className="text-[10px] text-gray-400 font-medium">Masuk Sebagai</p>
+                  <p className="text-xs font-bold text-gray-900 truncate">{session?.user?.name}</p>
+                  <p className="text-[10px] text-gray-500 truncate">{session?.user?.email}</p>
+                </div>
+
+                {/* Menu Options */}
+                <div className="p-2 space-y-1">
+                  
+                  {/* PWA Button */}
+                  {isStandalone ? (
+                    <div className="flex items-center gap-2.5 px-3 py-2.5 text-green-600 font-bold rounded-xl text-xs bg-green-50">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-green-600">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Aplikasi PWA Aktif</span>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        setShowMenu(false);
+                        handleInstallPWA();
+                      }} 
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-gray-700 hover:text-green-700 hover:bg-green-50 rounded-xl text-xs font-semibold transition-all cursor-pointer text-left"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-gray-500 group-hover:text-green-700">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                      </svg>
+                      <span>Download Versi PWA</span>
+                    </button>
+                  )}
+
+                  {/* Keluar Button */}
+                  <button 
+                    onClick={() => {
+                      setShowMenu(false);
+                      signOut();
+                    }} 
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-red-500 hover:bg-red-50 rounded-xl text-xs font-bold transition-all cursor-pointer text-left"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-red-500">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                    </svg>
+                    <span>Keluar</span>
+                  </button>
+
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -445,6 +557,54 @@ export default function DashboardPage() {
                 <button type="submit" className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold cursor-pointer">Rekam Transaksi</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PETUNJUK INSTALASI PWA */}
+      {showPwaGuideModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-xl text-xs space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-extrabold text-base text-gray-900">Cara Memasang frugalin.aja</h3>
+                <p className="text-gray-400 mt-0.5 text-[10px]">Akses cepat aplikasi di HP atau laptop tanpa browser</p>
+              </div>
+              <button onClick={() => setShowPwaGuideModal(false)} className="text-gray-400 hover:text-gray-700 font-bold text-sm cursor-pointer p-1">
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 mt-2">
+              {/* iOS / Safari */}
+              <div className="p-3 bg-green-50/50 rounded-xl border border-green-100">
+                <h4 className="font-bold text-green-700 text-xs flex items-center gap-1.5 mb-1.5">
+                  🍎 Untuk Pengguna iOS (Safari)
+                </h4>
+                <ol className="list-decimal list-inside space-y-1 text-gray-600 text-[11px]">
+                  <li>Buka halaman ini menggunakan browser <b>Safari</b>.</li>
+                  <li>Ketuk tombol <b>Bagikan (Share)</b> di menu bar bawah browser.</li>
+                  <li>Gulir ke bawah lalu ketuk <b>Tambah ke Layar Utama (Add to Home Screen)</b>.</li>
+                  <li>Beri nama <b>frugalin.aja</b> lalu tekan <b>Tambah (Add)</b>.</li>
+                </ol>
+              </div>
+
+              {/* Android / Chrome */}
+              <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                <h4 className="font-bold text-blue-700 text-xs flex items-center gap-1.5 mb-1.5">
+                  🤖 Untuk Pengguna Android / Laptop (Chrome)
+                </h4>
+                <ol className="list-decimal list-inside space-y-1 text-gray-600 text-[11px]">
+                  <li>Ketuk ikon <b>tiga titik</b> di pojok kanan atas browser Chrome.</li>
+                  <li>Ketuk opsi <b>Instal Aplikasi</b> atau <b>Tambahkan ke Layar Utama</b>.</li>
+                  <li>Konfirmasi instalasi untuk memasangnya di perangkat Anda.</li>
+                </ol>
+              </div>
+            </div>
+
+            <button onClick={() => setShowPwaGuideModal(false)} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-xl cursor-pointer text-center text-xs mt-2 transition-all">
+              Mengerti, Saya Siap Pasang
+            </button>
           </div>
         </div>
       )}
