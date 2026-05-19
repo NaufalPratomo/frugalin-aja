@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useToast } from "../../components/Toast";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const router = useRouter();
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (status === "authenticated") {
@@ -30,6 +32,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    showToast("Menghubungkan ke server...", "info");
 
     try {
       const res = await signIn("credentials", {
@@ -40,12 +43,15 @@ export default function LoginPage() {
 
       if (res.error) {
         setError("Email atau Password salah!");
+        showToast("Gagal masuk. Periksa kembali email dan password Anda.", "error");
         return;
       }
 
+      showToast("Berhasil masuk! Menyiapkan dashboard...", "success");
       router.replace("/dashboard");
     } catch (error) {
       setError("Terjadi kesalahan server");
+      showToast("Gagal terhubung ke server. Silakan coba lagi.", "error");
     }
   };
 

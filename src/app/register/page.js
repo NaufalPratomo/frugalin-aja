@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useToast } from "../../components/Toast";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -11,6 +12,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   
   const router = useRouter();
+  const { showToast } = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,8 +20,11 @@ export default function RegisterPage() {
 
     if (!name || !email || !password) {
       setError("Semua field harus diisi!");
+      showToast("Gagal. Semua kolom wajib diisi!", "error");
       return;
     }
+
+    showToast("Memproses pendaftaran akun...", "info");
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -31,15 +36,18 @@ export default function RegisterPage() {
       });
 
       if (res.ok) {
+        showToast("Pendaftaran sukses! Silakan masuk ke aplikasi.", "success");
         const form = e.target;
         form.reset();
         router.push("/login");
       } else {
         const { message } = await res.json();
         setError(message);
+        showToast(message || "Gagal mendaftarkan akun. Silakan coba lagi.", "error");
       }
     } catch (error) {
       setError("Terjadi kesalahan, silakan coba lagi.");
+      showToast("Terjadi gangguan jaringan atau server.", "error");
     }
   };
 

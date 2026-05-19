@@ -3,12 +3,14 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useToast } from "../../components/Toast";
 
 interface AccountType {
   _id: string;
   name: string;
   type: 'BANK' | 'CASH' | 'INVESTMENT';
   balance: number;
+  monthlyInterest?: number;
 }
 
 interface TransactionType {
@@ -24,6 +26,7 @@ interface TransactionType {
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { showToast } = useToast();
 
   const [accounts, setAccounts] = useState<AccountType[]>([]);
   const [transactions, setTransactions] = useState<TransactionType[]>([]);
@@ -40,6 +43,7 @@ export default function DashboardPage() {
   const [accName, setAccName] = useState("");
   const [accType, setAccType] = useState("BANK");
   const [accBalance, setAccBalance] = useState("");
+  const [accInterest, setAccInterest] = useState("");
   
   const [txAccount, setTxAccount] = useState("");
   const [txType, setTxType] = useState("EXPENSE");
@@ -50,7 +54,9 @@ export default function DashboardPage() {
   // Edit Balance state
   const [selectedAccId, setSelectedAccId] = useState("");
   const [selectedAccName, setSelectedAccName] = useState("");
+  const [selectedAccType, setSelectedAccType] = useState("");
   const [newBalanceValue, setNewBalanceValue] = useState("");
+  const [newInterestValue, setNewInterestValue] = useState("");
 
   // Limit Budget state
   const [newLimitValue, setNewLimitValue] = useState("");
@@ -90,6 +96,7 @@ export default function DashboardPage() {
       }
     } catch (e) {
       console.error("Gagal sinkronisasi data keuangan", e);
+      showToast("Gagal menyelaraskan data keuangan dari server.", "error");
     }
   };
 
@@ -136,73 +143,154 @@ export default function DashboardPage() {
 
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/accounts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: accName, type: accType, balance: Number(accBalance) })
-    });
-    if (res.ok) {
-      setShowAccModal(false);
-      setAccName("");
-      setAccBalance("");
-      fetchData();
+    showToast("Sedang membuat rekening baru...", "info");
+    try {
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: accName,
+          type: accType,
+          balance: Number(accBalance),
+          monthlyInterest: accType === "BANK" ? Number(accInterest) : 0
+        })
+      });
+      if (res.ok) {
+        showToast(`Rekening "${accName}" berhasil dibuat!`, "success");
+        setShowAccModal(false);
+        setAccName("");
+        setAccBalance("");
+        setAccInterest("");
+        fetchData();
+      } else {
+        showToast("Gagal membuat rekening baru.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghubungkan ke server.", "error");
     }
   };
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        accountId: txAccount,
-        type: txType,
-        amount: Number(txAmount),
-        category: txCategory,
-        description: txDesc
-      })
-    });
-    if (res.ok) {
-      setShowTxModal(false);
-      setTxAmount("");
-      setTxDesc("");
-      fetchData();
+    showToast("Mencatat transaksi keuangan...", "info");
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: txAccount,
+          type: txType,
+          amount: Number(txAmount),
+          category: txCategory,
+          description: txDesc
+        })
+      });
+      if (res.ok) {
+        showToast("Transaksi keuangan berhasil dicatat!", "success");
+        setShowTxModal(false);
+        setTxAmount("");
+        setTxDesc("");
+        fetchData();
+      } else {
+        showToast("Gagal mencatat transaksi.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat mencatat transaksi.", "error");
     }
   };
 
   const handleUpdateBalanceDirectly = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch(`/api/accounts/${selectedAccId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ balance: Number(newBalanceValue) })
-    });
-    if (res.ok) {
-      setShowEditBalanceModal(false);
-      setNewBalanceValue("");
-      fetchData();
+    showToast("Menyimpan rincian rekening...", "info");
+    try {
+      const res = await fetch(`/api/accounts/${selectedAccId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          balance: Number(newBalanceValue),
+          monthlyInterest: selectedAccType === "BANK" ? Number(newInterestValue) : 0
+        })
+      });
+      if (res.ok) {
+        showToast("Rincian rekening berhasil diperbarui!", "success");
+        setShowEditBalanceModal(false);
+        setNewBalanceValue("");
+        setNewInterestValue("");
+        fetchData();
+      } else {
+        showToast("Gagal memperbarui rincian rekening.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat memperbarui rekening.", "error");
+    }
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus transaksi ini? Saldo rekening Anda akan disesuaikan secara otomatis sesuai nominal transaksi.")) return;
+    showToast("Menghapus transaksi...", "info");
+    try {
+      const res = await fetch(`/api/transactions/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        showToast("Transaksi berhasil dihapus. Saldo otomatis disesuaikan!", "success");
+        fetchData();
+      } else {
+        showToast("Gagal menghapus transaksi.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghapus transaksi.", "error");
+    }
+  };
+
+  const handleDeleteAccount = async (id: string) => {
+    if (!confirm(`Apakah Anda yakin ingin menghapus rekening "${selectedAccName}"? Tindakan ini bersifat permanen dan juga akan menghapus seluruh riwayat transaksi yang terhubung dengan rekening ini.`)) return;
+    showToast("Menghapus rekening...", "info");
+    try {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        showToast(`Rekening "${selectedAccName}" beserta riwayatnya berhasil dihapus!`, "success");
+        setShowEditBalanceModal(false);
+        fetchData();
+      } else {
+        showToast("Gagal menghapus rekening.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghapus rekening.", "error");
     }
   };
 
   const handleUpdateLimit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/user/limit", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ monthlyLimit: Number(newLimitValue) })
-    });
-    
-    if (res.ok) {
-      setShowLimitModal(false);
-      await fetchData(); // Memanggil ulang fungsi fetch agar tampilan layar langsung ter-update
-    } else {
-      alert("Gagal memperbarui batas anggaran.");
+    showToast("Menyimpan batas anggaran...", "info");
+    try {
+      const res = await fetch("/api/user/limit", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyLimit: Number(newLimitValue) })
+      });
+      
+      if (res.ok) {
+        showToast("Batas limit anggaran bulanan berhasil diperbarui!", "success");
+        setShowLimitModal(false);
+        await fetchData();
+      } else {
+        showToast("Gagal memperbarui batas anggaran.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat mengubah batas anggaran.", "error");
     }
   };
 
   if (status === "loading") return <div className="grid place-items-center h-screen bg-gray-50 text-gray-500 text-sm">Menyelaraskan dompet digital...</div>;
 
   const totalNetWorth = accounts.reduce((acc, curr) => acc + curr.balance, 0);
+
+  const totalMonthlyInterest = accounts
+    .filter(acc => acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0)
+    .reduce((acc, curr) => acc + (curr.monthlyInterest || 0), 0);
 
   // LOGIKA HITUNG PENGELUARAN BULAN INI
   const currentMonth = new Date().getMonth();
@@ -225,10 +313,10 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-gray-800 antialiased">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-gray-800 antialiased flex flex-col">
       
       {/* HEADER */}
-      <div className="max-w-6xl mx-auto flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6 relative">
+      <div className="w-full max-w-6xl mx-auto flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6 relative">
         <div>
           <p className="text-xs text-gray-400 font-medium">Selamat Datang,</p>
           <h2 className="text-lg font-bold text-gray-900">{session?.user?.name}</h2>
@@ -293,6 +381,7 @@ export default function DashboardPage() {
                   <button 
                     onClick={() => {
                       setShowMenu(false);
+                      showToast("Keluar dari sistem... Sampai jumpa lagi!", "success");
                       signOut();
                     }} 
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 text-red-500 hover:bg-red-50 rounded-xl text-xs font-bold transition-all cursor-pointer text-left"
@@ -310,16 +399,34 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="w-full max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* AREA KIRI: CARD UTAMA, LIMIT TRACKER & DAFTAR ASET */}
         <div className="md:col-span-2 space-y-6">
           
           {/* CARD TOTAL KEKAYAAN */}
-          <div className="bg-gradient-to-br from-green-600 to-emerald-700 p-6 rounded-3xl text-white shadow-lg shadow-green-100">
-            <p className="text-sm opacity-80 font-medium">Total Aset Gabungan</p>
-            <h1 className="text-3xl md:text-4xl font-black mt-1">Rp {totalNetWorth.toLocaleString("id-ID")}</h1>
-            <div className="flex gap-3 mt-6">
+          <div className="bg-gradient-to-br from-green-600 to-emerald-700 p-6 rounded-3xl text-white shadow-lg shadow-green-100 relative overflow-hidden">
+            {/* Background pattern decoration */}
+            <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none transform translate-x-12 translate-y-12">
+              <svg width="200" height="200" viewBox="0 0 100 100" fill="currentColor">
+                <circle cx="50" cy="50" r="50" />
+              </svg>
+            </div>
+
+            <div className="flex justify-between items-start relative z-10">
+              <div>
+                <p className="text-sm opacity-80 font-medium">Total Aset Gabungan</p>
+                <h1 className="text-3xl md:text-4xl font-black mt-1">Rp {totalNetWorth.toLocaleString("id-ID")}</h1>
+              </div>
+              {totalMonthlyInterest > 0 && (
+                <div className="bg-red-500/20 backdrop-blur-md px-3 py-1.5 rounded-xl border border-red-500/30 text-right animate-pulse">
+                  <p className="text-[9px] opacity-75 font-semibold uppercase tracking-wider">Bunga Bank Wajib / Bln</p>
+                  <p className="text-xs font-extrabold text-red-100">Rp {totalMonthlyInterest.toLocaleString("id-ID")}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6 relative z-10">
               <button onClick={() => { if(accounts.length > 0) setShowTxModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 bg-white text-green-700 font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-green-50 transition-all shadow-sm cursor-pointer">
                 Catat Transaksi
               </button>
@@ -386,6 +493,14 @@ export default function DashboardPage() {
                       {acc.type}
                     </span>
                     <h4 className="font-bold text-gray-900 mt-1 text-sm">{acc.name}</h4>
+                    {acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0 ? (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1 bg-red-50/50 px-2 py-0.5 rounded-md w-fit">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-red-400 animate-pulse">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clipRule="evenodd" />
+                        </svg>
+                        Bunga: Rp {acc.monthlyInterest.toLocaleString("id-ID")}/bln
+                      </p>
+                    ) : null}
                   </div>
                   <div className="text-right flex items-center gap-2">
                     <p className="font-extrabold text-sm text-gray-900">Rp {acc.balance.toLocaleString("id-ID")}</p>
@@ -393,7 +508,9 @@ export default function DashboardPage() {
                       onClick={() => {
                         setSelectedAccId(acc._id);
                         setSelectedAccName(acc.name);
+                        setSelectedAccType(acc.type);
                         setNewBalanceValue(acc.balance.toString());
+                        setNewInterestValue((acc.monthlyInterest || 0).toString());
                         setShowEditBalanceModal(true);
                       }}
                       className="text-gray-400 hover:text-green-600 p-1.5 rounded-md hover:bg-gray-50 transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-gray-100"
@@ -434,14 +551,25 @@ export default function DashboardPage() {
             {filteredTransactions.map((tx) => {
               const linkedAccount = accounts.find(a => a._id === tx.accountId);
               return (
-                <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2 hover:bg-gray-50/50 rounded p-1 transition-all">
+                <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2 hover:bg-gray-50/50 rounded p-1 transition-all group">
                   <div>
                     <h5 className="font-bold text-gray-900">{tx.category} <span className="text-[10px] font-normal text-gray-400">({linkedAccount ? linkedAccount.name : 'Aset'})</span></h5>
                     <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{tx.description || "-"}</p>
                   </div>
-                  <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : "text-red-500"}`}>
-                    {tx.type === "INCOME" ? "+" : "-"} Rp {tx.amount.toLocaleString("id-ID")}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : "text-red-500"}`}>
+                      {tx.type === "INCOME" ? "+" : "-"} Rp {tx.amount.toLocaleString("id-ID")}
+                    </p>
+                    <button
+                      onClick={() => handleDeleteTransaction(tx._id)}
+                      className="text-gray-300 hover:text-red-500 p-1.5 rounded transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                      title="Hapus Transaksi"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -472,7 +600,7 @@ export default function DashboardPage() {
 
       {/* MODAL: TAMBAH BANK */}
       {showAccModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
             <h3 className="font-bold text-base mb-4">Tambah Akun Dana Baru</h3>
             <form onSubmit={handleAddAccount} className="space-y-3 text-xs">
@@ -485,9 +613,18 @@ export default function DashboardPage() {
                 <select value={accType} onChange={e => setAccType(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500">
                   <option value="BANK">BANK / REKENING</option>
                   <option value="CASH">UANG CASH / TUNAI</option>
-                  <option value="INVESTMENT">SAHAM / INVESTASI</option>
+                  <option value="INVESTMENT">INVESTASI</option>
                 </select>
               </div>
+              {accType === "BANK" && (
+                <div className="animate-in slide-in-from-top-2 duration-200">
+                  <label className="block mb-1 font-semibold text-gray-600 flex justify-between">
+                    <span>Bunga Bulanan Wajib Dibayar (Rp)</span>
+                    <span className="text-[10px] text-gray-400 font-normal">Opsional</span>
+                  </label>
+                  <input type="number" placeholder="0" value={accInterest} onChange={e => setAccInterest(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-red-500 font-semibold" />
+                </div>
+              )}
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Saldo Awal</label>
                 <input required type="number" placeholder="0" value={accBalance} onChange={e => setAccBalance(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black" />
@@ -503,18 +640,39 @@ export default function DashboardPage() {
 
       {/* MODAL: EDIT/UPDATE SALDO MANUAL */}
       {showEditBalanceModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
-            <h3 className="font-bold text-base mb-1">Update Saldo Instan</h3>
-            <p className="text-xs text-gray-400 mb-4">Kalibrasi nominal saldo untuk akun: <span className="font-bold text-gray-700">{selectedAccName}</span></p>
+            <h3 className="font-bold text-base mb-1">Kelola Akun Keuangan</h3>
+            <p className="text-xs text-gray-400 mb-4">Perbarui saldo dan rincian untuk: <span className="font-bold text-gray-700">{selectedAccName}</span></p>
             <form onSubmit={handleUpdateBalanceDirectly} className="space-y-3 text-xs">
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Nominal Saldo Terbaru (Rp)</label>
-                <input required type="number" value={newBalanceValue} onChange={e => setNewBalanceValue(e.target.value)} className="w-full border p-2 rounded-lg text-sm font-bold text-green-600 focus:outline-none focus:border-green-500" />
+                <input required type="number" value={newBalanceValue} onChange={e => setNewBalanceValue(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold text-green-600 focus:outline-none focus:border-green-500 text-black" />
               </div>
+              {selectedAccType === "BANK" && (
+                <div className="animate-in slide-in-from-top-2 duration-200">
+                  <label className="block mb-1 font-semibold text-gray-600 flex justify-between">
+                    <span>Bunga Bulanan Wajib Dibayar (Rp)</span>
+                    <span className="text-[10px] text-gray-400 font-normal">Opsional</span>
+                  </label>
+                  <input type="number" value={newInterestValue} onChange={e => setNewInterestValue(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold text-red-500 focus:outline-none focus:border-green-500 text-black" />
+                </div>
+              )}
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowEditBalanceModal(false)} className="flex-1 bg-gray-100 py-2 rounded-lg font-bold cursor-pointer">Batal</button>
-                <button type="submit" className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold cursor-pointer">Perbarui Saldo</button>
+                <button type="button" onClick={() => setShowEditBalanceModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Simpan Perubahan</button>
+              </div>
+              <div className="pt-2 border-t border-gray-100 mt-2">
+                <button 
+                  type="button" 
+                  onClick={() => handleDeleteAccount(selectedAccId)}
+                  className="w-full bg-red-50 text-red-600 hover:bg-red-100 py-2 rounded-lg font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  </svg>
+                  Hapus Rekening / Dompet ini
+                </button>
               </div>
             </form>
           </div>
@@ -579,7 +737,7 @@ export default function DashboardPage() {
               {/* iOS / Safari */}
               <div className="p-3 bg-green-50/50 rounded-xl border border-green-100">
                 <h4 className="font-bold text-green-700 text-xs flex items-center gap-1.5 mb-1.5">
-                  🍎 Untuk Pengguna iOS (Safari)
+                  Untuk Pengguna iOS (Safari)
                 </h4>
                 <ol className="list-decimal list-inside space-y-1 text-gray-600 text-[11px]">
                   <li>Buka halaman ini menggunakan browser <b>Safari</b>.</li>
@@ -592,7 +750,7 @@ export default function DashboardPage() {
               {/* Android / Chrome */}
               <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
                 <h4 className="font-bold text-blue-700 text-xs flex items-center gap-1.5 mb-1.5">
-                  🤖 Untuk Pengguna Android / Laptop (Chrome)
+                  Untuk Pengguna Android / Laptop (Chrome)
                 </h4>
                 <ol className="list-decimal list-inside space-y-1 text-gray-600 text-[11px]">
                   <li>Ketuk ikon <b>tiga titik</b> di pojok kanan atas browser Chrome.</li>
@@ -608,6 +766,22 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* FOOTER BRANDING */}
+      <footer className="max-w-6xl mx-auto text-center mt-auto pt-12 pb-4 text-[11px] text-gray-400">
+        <p className="font-medium">
+          developed by{" "}
+          <a
+            href="https://www.naufalpratomo.my.id/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-green-600 hover:text-green-700 font-bold transition-all underline decoration-dotted underline-offset-4 cursor-pointer"
+          >
+            Muhammad Naufal Pratomo
+          </a>
+        </p>
+        <p className="text-[10px] text-gray-300 mt-0.5">© {new Date().getFullYear()} frugalin.aja. All rights reserved.</p>
+      </footer>
 
     </div>
   );

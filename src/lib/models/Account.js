@@ -8,7 +8,13 @@ const AccountSchema = new mongoose.Schema({
     enum: ['BANK', 'CASH', 'INVESTMENT'], 
     required: true 
   },
-  balance: { type: Number, default: 0 } // Saldo saat ini
+  balance: { type: Number, default: 0 }, // Saldo saat ini
+  monthlyInterest: { type: Number, default: 0 } // Bunga wajib per bulan (khusus tipe BANK)
 }, { timestamps: true });
+
+// Mencegah caching schema lama oleh Mongoose di environment development Next.js
+if (process.env.NODE_ENV === 'development' && mongoose.models.Account) {
+  delete mongoose.models.Account;
+}
 
 export default mongoose.models.Account || mongoose.model('Account', AccountSchema);

@@ -1,4 +1,5 @@
 import { AuthProvider } from "../components/Provider";
+import { ToastProvider } from "../components/Toast";
 import "./globals.css";
 
 export const metadata = {
@@ -29,7 +30,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          {children}
+          <ToastProvider>
+            {children}
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>
