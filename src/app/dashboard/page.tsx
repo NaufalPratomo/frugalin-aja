@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useToast } from "../../components/Toast";
+import SplashScreen from "../../components/SplashScreen";
 
 interface AccountType {
   _id: string;
@@ -561,7 +562,7 @@ export default function DashboardPage() {
     }
   };
 
-  if (status === "loading") return <div className="grid place-items-center h-screen bg-gray-50 text-gray-500 text-sm">Menyelaraskan dompet digital...</div>;
+  if (status === "loading") return <SplashScreen />;
 
   const totalNetWorth = accounts.reduce((acc, curr) => acc + curr.balance, 0);
 

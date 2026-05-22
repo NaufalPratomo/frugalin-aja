@@ -5,6 +5,7 @@ import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "../../components/Toast";
+import SplashScreen from "../../components/SplashScreen";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
@@ -22,11 +23,7 @@ export default function LoginPage() {
   }, [status, router]);
 
   if (status === "loading") {
-    return (
-      <div className="grid place-items-center h-screen bg-gradient-to-b from-green-50 to-white text-gray-500 text-sm font-semibold">
-        Menyelaraskan dompet digital...
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   const handleSubmit = async (e) => {
