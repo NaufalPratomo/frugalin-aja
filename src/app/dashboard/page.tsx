@@ -23,6 +23,166 @@ interface TransactionType {
   date: string;
 }
 
+function parseReceiptText(text: string) {
+  const lines = text.split("\n");
+  
+  let detectedAmount = 0;
+  let detectedCategory = "Belanja & Harian";
+  let detectedDescription = "";
+  let detectedDate = "";
+  
+  const nonEmptyLines = lines.map(l => l.trim()).filter(l => l.length > 0);
+  if (nonEmptyLines.length > 0) {
+    const storeCandidate = nonEmptyLines[0];
+    if (!/receipt|invoice|struk|nota/i.test(storeCandidate)) {
+      detectedDescription = storeCandidate;
+    } else if (nonEmptyLines.length > 1) {
+      detectedDescription = nonEmptyLines[1];
+    }
+  }
+  
+  const totalKeywords = [
+    /grand\s*total/i,
+    /total/i,
+    /jumlah\s*total/i,
+    /jumlah/i,
+    /total\s*bayar/i,
+    /bayar/i,
+    /rp\.?\s*\d+/i,
+    /amount/i,
+    /netto/i,
+    /subtotal/i,
+  ];
+
+  let amountCandidates: { line: string; value: number; priority: number }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    for (let k = 0; k < totalKeywords.length; k++) {
+      const regex = totalKeywords[k];
+      if (regex.test(line)) {
+        const numbers = line.match(/\d+[\d.,]*/g);
+        if (numbers) {
+          for (const numStr of numbers) {
+            let cleanStr = numStr.replace(/[,.]00$/, "");
+            const digitsOnly = cleanStr.replace(/\D/g, "");
+            const val = parseInt(digitsOnly, 10);
+            if (val > 100 && val < 50000000) {
+              amountCandidates.push({
+                line: line,
+                value: val,
+                priority: k
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (amountCandidates.length > 0) {
+    amountCandidates.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      return b.value - a.value;
+    });
+    detectedAmount = amountCandidates[0].value;
+  } else {
+    const allNumbers = text.match(/\b\d+[,.]\d{3}\b|\b\d{4,7}\b/g);
+    if (allNumbers) {
+      let maxVal = 0;
+      for (const numStr of allNumbers) {
+        const digitsOnly = numStr.replace(/\D/g, "");
+        const val = parseInt(digitsOnly, 10);
+        if (val > maxVal && val < 10000000) {
+          maxVal = val;
+        }
+      }
+      detectedAmount = maxVal;
+    }
+  }
+
+  const categoryRules = [
+    {
+      category: "Makanan & Minuman",
+      keywords: [/makan/i, /minum/i, /kopi/i, /cafe/i, /resto/i, /bakso/i, /mie/i, /warung/i, /food/i, /beverage/i, /coffe/i, /teh/i, /chicken/i, /burger/i, /pizza/i, /kuliner/i, /dapur/i, /roti/i, /bakery/i]
+    },
+    {
+      category: "Belanja & Harian",
+      keywords: [/mart/i, /indo/i, /alfa/i, /super/i, /pasar/i, /hiper/i, /shop/i, /store/i, /sabun/i, /odol/i, /detergen/i, /susu/i, /sembako/i, /minyak/i, /beras/i, /trans/i, /carefour/i, /lotte/i, /baju/i, /celana/i, /sepatu/i, /fashion/i, /mall/i]
+    },
+    {
+      category: "Transportasi",
+      keywords: [/bensin/i, /pertamina/i, /spbu/i, /shell/i, /gojek/i, /grab/i, /uber/i, /ojek/i, /taxi/i, /taksi/i, /tol/i, /parkir/i, /tiket/i, /kereta/i, /pesawat/i, /travel/i, /krl/i, /mrt/i]
+    },
+    {
+      category: "Kesehatan",
+      keywords: [/apotek/i, /obat/i, /dokter/i, /klinik/i, /sehat/i, /rs/i, /rumah\s*sakit/i, /vitamin/i, /periksa/i, /optik/i, /kacamata/i]
+    },
+    {
+      category: "Hiburan & Rekreasi",
+      keywords: [/nonton/i, /bioskop/i, /cinema/i, /xxi/i, /cgv/i, /game/i, /play/i, /wisata/i, /liburan/i, /hotel/i, /karaoke/i, /konser/i, /tiket/i]
+    },
+    {
+      category: "Tagihan & Pulsa",
+      keywords: [/listrik/i, /pln/i, /air/i, /pdam/i, /internet/i, /wifi/i, /pulsa/i, /kuota/i, /telkom/i, /bpjs/i, /asuransi/i, /pajak/i, /iuran/i]
+    }
+  ];
+
+  for (const rule of categoryRules) {
+    for (const kw of rule.keywords) {
+      if (kw.test(text)) {
+        detectedCategory = rule.category;
+        break;
+      }
+    }
+    if (detectedCategory !== "Belanja & Harian") break;
+  }
+
+  const dateRegexes = [
+    /\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b/,
+    /\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/
+  ];
+
+  for (const regex of dateRegexes) {
+    const match = text.match(regex);
+    if (match) {
+      if (match[1].length === 4) {
+        detectedDate = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+      } else {
+        let year = match[3];
+        if (year.length === 2) year = "20" + year;
+        detectedDate = `${year}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+      }
+      break;
+    }
+  }
+
+  if (!detectedDate) {
+    const today = new Date();
+    detectedDate = today.toISOString().split("T")[0];
+  }
+
+  if (detectedDescription) {
+    detectedDescription = detectedDescription
+      .toLowerCase()
+      .split(" ")
+      .map(w => w.charAt(0).toUpperCase() + w.substring(1))
+      .join(" ");
+  } else {
+    detectedDescription = "Belanja Struk";
+  }
+
+  return {
+    amount: detectedAmount,
+    category: detectedCategory,
+    description: detectedDescription,
+    date: detectedDate
+  };
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -36,8 +196,20 @@ export default function DashboardPage() {
   // Modals state
   const [showAccModal, setShowAccModal] = useState(false);
   const [showTxModal, setShowTxModal] = useState(false);
+  const [showOcrModal, setShowOcrModal] = useState(false);
   const [showEditBalanceModal, setShowEditBalanceModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
+
+  // OCR Scan states
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [ocrImageSrc, setOcrImageSrc] = useState<string | null>(null);
+
+  const [ocrAmount, setOcrAmount] = useState("");
+  const [ocrCategory, setOcrCategory] = useState("Belanja & Harian");
+  const [ocrDesc, setOcrDesc] = useState("");
+  const [ocrDate, setOcrDate] = useState("");
+  const [ocrAccount, setOcrAccount] = useState("");
 
   // Forms state
   const [accName, setAccName] = useState("");
@@ -74,7 +246,10 @@ export default function DashboardPage() {
       const dataAcc = await resAcc.json();
       if (Array.isArray(dataAcc)) {
         setAccounts(dataAcc);
-        if (dataAcc.length > 0 && !txAccount) setTxAccount(dataAcc[0]._id);
+        if (dataAcc.length > 0) {
+          if (!txAccount) setTxAccount(dataAcc[0]._id);
+          if (!ocrAccount) setOcrAccount(dataAcc[0]._id);
+        }
       }
 
       const resTx = await fetch("/api/transactions");
@@ -193,6 +368,90 @@ export default function DashboardPage() {
         fetchData();
       } else {
         showToast("Gagal mencatat transaksi.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat mencatat transaksi.", "error");
+    }
+  };
+
+  const handleOcrFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Create image preview
+    const reader = new FileReader();
+    reader.onload = () => {
+      setOcrImageSrc(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    setIsScanning(true);
+    setScanProgress(0);
+    showToast("Memulai proses OCR pemindaian struk...", "info");
+
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("eng", 1, {
+        logger: m => {
+          if (m.status === "recognizing text") {
+            setScanProgress(Math.round(m.progress * 100));
+          }
+        }
+      });
+
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
+
+      console.log("Raw OCR Text:", text);
+
+      // Parse text to extract transaction data
+      const parsed = parseReceiptText(text);
+
+      // Update forms state with detected data
+      setOcrAmount(parsed.amount > 0 ? parsed.amount.toString() : "");
+      setOcrCategory(parsed.category);
+      setOcrDesc(parsed.description);
+      setOcrDate(parsed.date);
+      
+      showToast("Pemindaian selesai! Silakan periksa hasilnya.", "success");
+    } catch (err: any) {
+      console.error("OCR Scan Error:", err);
+      showToast("Gagal melakukan scan ocr. Masukkan data manual.", "error");
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleAddOcrTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ocrAccount) {
+      showToast("Pilih rekening bank terlebih dahulu!", "error");
+      return;
+    }
+    showToast("Mencatat transaksi hasil OCR...", "info");
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: ocrAccount,
+          type: "EXPENSE",
+          amount: Number(ocrAmount),
+          category: ocrCategory,
+          description: ocrDesc,
+          date: ocrDate ? new Date(ocrDate) : new Date()
+        })
+      });
+      if (res.ok) {
+        showToast("Transaksi pengeluaran berhasil dicatat!", "success");
+        setShowOcrModal(false);
+        setOcrAmount("");
+        setOcrDesc("");
+        setOcrImageSrc(null);
+        fetchData();
+      } else {
+        const errorData = await res.json();
+        showToast(`Gagal mencatat transaksi: ${errorData.message || "Error"}`, "error");
       }
     } catch (err) {
       showToast("Kesalahan saat mencatat transaksi.", "error");
@@ -426,12 +685,22 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <div className="flex gap-3 mt-6 relative z-10">
-              <button onClick={() => { if(accounts.length > 0) setShowTxModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 bg-white text-green-700 font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-green-50 transition-all shadow-sm cursor-pointer">
-                Catat Transaksi
+            <div className="flex flex-wrap gap-2.5 mt-6 relative z-10">
+              <button onClick={() => { if(accounts.length > 0) setShowTxModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-white text-green-700 font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-green-50 transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-green-600">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Catat Manual
               </button>
-              <button onClick={() => setShowAccModal(true)} className="bg-green-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-green-400 transition-all border border-green-400 cursor-pointer">
-                Tambah Bank
+              <button onClick={() => { if(accounts.length > 0) setShowOcrModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-emerald-800 text-white font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-emerald-900 transition-all border border-emerald-700 shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-emerald-300">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+                </svg>
+                Scan Struk
+              </button>
+              <button onClick={() => setShowAccModal(true)} className="bg-green-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-green-400 transition-all border border-green-400 cursor-pointer flex items-center justify-center gap-1.5">
+                <span>+ Akun</span>
               </button>
             </div>
           </div>
@@ -683,7 +952,23 @@ export default function DashboardPage() {
       {showTxModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
           <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
-            <h3 className="font-bold text-base mb-4">Catat Keuangan</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-base">Catat Keuangan</h3>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowTxModal(false);
+                  setShowOcrModal(true);
+                }} 
+                className="text-[10px] text-green-600 font-extrabold bg-green-50 hover:bg-green-100 py-1.5 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer transition-all border border-green-100"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+                </svg>
+                Scan Struk
+              </button>
+            </div>
             <form onSubmit={handleAddTransaction} className="space-y-3 text-xs">
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Pilih Rekening Tujuan</label>
@@ -715,6 +1000,225 @@ export default function DashboardPage() {
                 <button type="submit" className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold cursor-pointer">Rekam Transaksi</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* STYLE FOR OCR SCAN ANIMATION */}
+      <style>{`
+        .ocr-scan-line {
+          position: absolute;
+          left: 0;
+          right: 0;
+          height: 3px;
+          background: linear-gradient(to right, transparent, #4ade80, transparent);
+          box-shadow: 0 0 12px #4ade80;
+          animation: scan-line-anim 2s ease-in-out infinite;
+        }
+        @keyframes scan-line-anim {
+          0% { top: 0%; }
+          50% { top: 100%; }
+          100% { top: 0%; }
+        }
+      `}</style>
+
+      {/* MODAL: SCAN STRUK (OCR) */}
+      {showOcrModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm grid place-items-center p-4 z-50 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100 flex flex-col my-8 animate-in slide-in-from-bottom-8 duration-300">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-5 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+                </svg>
+                <div>
+                  <h3 className="font-extrabold text-sm leading-tight">Pemindai Struk Pintar</h3>
+                  <p className="text-[10px] text-green-100 font-medium">Scan struk belanja & catat pengeluaran otomatis</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowOcrModal(false);
+                  setOcrImageSrc(null);
+                  setOcrAmount("");
+                  setOcrDesc("");
+                }} 
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-all cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 overflow-y-auto max-h-[calc(80vh-80px)]">
+              {/* Image upload area / preview area */}
+              {!ocrImageSrc ? (
+                <div className="border-2 border-dashed border-gray-200 hover:border-green-400 rounded-2xl p-8 text-center bg-gray-50/50 hover:bg-green-50/10 transition-all group flex flex-col items-center justify-center relative cursor-pointer min-h-[180px]">
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleOcrFileChange} 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                  />
+                  <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100 group-hover:scale-110 transition-all duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-green-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
+                    </svg>
+                  </div>
+                  <h4 className="mt-4 font-bold text-gray-800 text-xs">Pilih atau Ambil Foto Struk</h4>
+                  <p className="text-[10px] text-gray-400 mt-1 max-w-[240px]">Ambil gambar secara langsung menggunakan kamera HP atau unggah file foto struk belanja Anda</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Photo Preview with Scanning Animation */}
+                  <div className="relative border border-gray-100 rounded-2xl overflow-hidden aspect-video bg-gray-50 flex items-center justify-center max-h-[220px]">
+                    <img 
+                      src={ocrImageSrc} 
+                      alt="Preview Struk" 
+                      className="max-h-full max-w-full object-contain"
+                    />
+                    
+                    {/* Glowing Green Scan Line Animation */}
+                    {isScanning && (
+                      <div className="absolute inset-0 bg-black/10 flex flex-col justify-between overflow-hidden">
+                        <div className="ocr-scan-line" />
+                        <div className="absolute inset-0 bg-emerald-950/20 backdrop-blur-[1px] flex items-center justify-center flex-col">
+                          <div className="bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-3">
+                            {/* Modern loading spinner */}
+                            <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                            <div>
+                              <p className="font-extrabold text-[11px] text-gray-800 leading-tight">Sedang Membaca Struk ({scanProgress}%)</p>
+                              <p className="text-[9px] text-gray-400 mt-0.5">Mengekstrak teks & menganalisis total belanja...</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Action to change photo */}
+                  {!isScanning && (
+                    <div className="flex justify-end">
+                      <label className="text-[10px] text-green-600 hover:text-green-700 bg-green-50 font-bold py-1.5 px-3 rounded-lg cursor-pointer flex items-center gap-1.5 border border-green-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                        <span>Ganti Foto Struk</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={handleOcrFileChange} 
+                          className="hidden" 
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Parsed Result & Edit Form */}
+              {ocrImageSrc && !isScanning && (
+                <form onSubmit={handleAddOcrTransaction} className="space-y-4 text-xs animate-in fade-in duration-200">
+                  <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50 space-y-3">
+                    <p className="font-bold text-[10px] text-emerald-800 uppercase tracking-wider">Hasil Analisis Pemindai</p>
+                    
+                    {/* Amount detected */}
+                    <div className="grid grid-cols-1 gap-1">
+                      <label className="font-semibold text-gray-500 text-[10px]">Nominal Belanja Terdeteksi (Rp)</label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3 font-extrabold text-sm text-gray-400">Rp</span>
+                        <input 
+                          required 
+                          type="number" 
+                          placeholder="Masukkan nominal" 
+                          value={ocrAmount} 
+                          onChange={e => setOcrAmount(e.target.value)} 
+                          className="w-full border p-2.5 pl-9 rounded-xl text-base font-extrabold text-green-700 bg-white focus:outline-none focus:border-green-500 text-black" 
+                        />
+                      </div>
+                      {ocrAmount && (
+                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                          Terformat: Rp {Number(ocrAmount).toLocaleString("id-ID")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block mb-1 font-semibold text-gray-600">Pilih Rekening Asal</label>
+                      <select 
+                        value={ocrAccount} 
+                        onChange={e => setOcrAccount(e.target.value)} 
+                        className="w-full border p-2.5 rounded-xl bg-white text-black text-xs font-semibold focus:outline-none focus:border-green-500"
+                      >
+                        {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block mb-1 font-semibold text-gray-600">Kategori Pengeluaran</label>
+                      <input 
+                        required 
+                        type="text" 
+                        placeholder="Contoh: Makanan, Belanja Harian" 
+                        value={ocrCategory} 
+                        onChange={e => setOcrCategory(e.target.value)} 
+                        className="w-full border p-2.5 rounded-xl text-xs bg-white text-black focus:outline-none focus:border-green-500" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block mb-1 font-semibold text-gray-600">Keterangan / Nama Toko</label>
+                      <input 
+                        type="text" 
+                        placeholder="Contoh: Alfamart Sudirman, Makan Siang Bakso" 
+                        value={ocrDesc} 
+                        onChange={e => setOcrDesc(e.target.value)} 
+                        className="w-full border p-2.5 rounded-xl text-xs bg-white text-black focus:outline-none focus:border-green-500" 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block mb-1 font-semibold text-gray-600">Tanggal Struk</label>
+                      <input 
+                        required 
+                        type="date" 
+                        value={ocrDate} 
+                        onChange={e => setOcrDate(e.target.value)} 
+                        className="w-full border p-2.5 rounded-xl text-xs bg-white text-black focus:outline-none focus:border-green-500 font-semibold" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2.5 pt-3">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setShowOcrModal(false);
+                        setOcrImageSrc(null);
+                        setOcrAmount("");
+                        setOcrDesc("");
+                      }} 
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 py-3 rounded-xl font-bold transition-all text-xs cursor-pointer text-center text-gray-700"
+                    >
+                      Batal
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold transition-all text-xs cursor-pointer shadow-md shadow-green-100"
+                    >
+                      Simpan Pengeluaran
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         </div>
       )}
