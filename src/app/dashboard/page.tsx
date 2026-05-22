@@ -43,15 +43,15 @@ function parseReceiptText(text: string) {
   
   const totalKeywords = [
     /grand\s*total/i,
+    /total\s*bayar/i,
     /total/i,
+    /subtotal/i,
     /jumlah\s*total/i,
     /jumlah/i,
-    /total\s*bayar/i,
+    /netto/i,
+    /amount/i,
     /bayar/i,
     /rp\.?\s*\d+/i,
-    /amount/i,
-    /netto/i,
-    /subtotal/i,
   ];
 
   let amountCandidates: { line: string; value: number; priority: number }[] = [];
@@ -68,7 +68,8 @@ function parseReceiptText(text: string) {
             let cleanStr = numStr.replace(/[,.]00$/, "");
             const digitsOnly = cleanStr.replace(/\D/g, "");
             const val = parseInt(digitsOnly, 10);
-            if (val > 100 && val < 50000000) {
+            // Increased maximum limit to 1 Billion to accommodate wholesale/grosir receipts
+            if (val > 100 && val <= 1000000000) {
               amountCandidates.push({
                 line: line,
                 value: val,
@@ -96,7 +97,7 @@ function parseReceiptText(text: string) {
       for (const numStr of allNumbers) {
         const digitsOnly = numStr.replace(/\D/g, "");
         const val = parseInt(digitsOnly, 10);
-        if (val > maxVal && val < 10000000) {
+        if (val > maxVal && val <= 1000000000) {
           maxVal = val;
         }
       }
@@ -141,22 +142,36 @@ function parseReceiptText(text: string) {
     if (detectedCategory !== "Belanja & Harian") break;
   }
 
+  // Expanded to support dot (.) as date separator (common in Indonesian receipts, e.g. 10.01.2023)
   const dateRegexes = [
-    /\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b/,
-    /\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/
+    /\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b/,
+    /\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/
   ];
 
   for (const regex of dateRegexes) {
     const match = text.match(regex);
     if (match) {
+      let day = 0;
+      let month = 0;
+      let year = 0;
+
       if (match[1].length === 4) {
-        detectedDate = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+        year = parseInt(match[1], 10);
+        month = parseInt(match[2], 10);
+        day = parseInt(match[3], 10);
       } else {
-        let year = match[3];
-        if (year.length === 2) year = "20" + year;
-        detectedDate = `${year}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+        day = parseInt(match[1], 10);
+        month = parseInt(match[2], 10);
+        let yrStr = match[3];
+        if (yrStr.length === 2) yrStr = "20" + yrStr;
+        year = parseInt(yrStr, 10);
       }
-      break;
+
+      // Validate date bounds to prevent matching arbitrary numbers like times or prices
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+        detectedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        break;
+      }
     }
   }
 
@@ -386,37 +401,40 @@ export default function DashboardPage() {
     reader.readAsDataURL(file);
 
     setIsScanning(true);
-    setScanProgress(0);
-    showToast("Memulai proses OCR pemindaian struk...", "info");
+    setScanProgress(25);
+    showToast("Mengunggah dan memproses struk dengan AI...", "info");
 
     try {
-      const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker("eng", 1, {
-        logger: m => {
-          if (m.status === "recognizing text") {
-            setScanProgress(Math.round(m.progress * 100));
-          }
-        }
+      const formData = new FormData();
+      formData.append("file", file);
+
+      setScanProgress(60);
+
+      const response = await fetch("/api/ocr", {
+        method: "POST",
+        body: formData,
       });
 
-      const { data: { text } } = await worker.recognize(file);
-      await worker.terminate();
+      setScanProgress(90);
 
-      console.log("Raw OCR Text:", text);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Gagal memproses struk.");
+      }
 
-      // Parse text to extract transaction data
-      const parsed = parseReceiptText(text);
+      const parsed = await response.json();
 
-      // Update forms state with detected data
-      setOcrAmount(parsed.amount > 0 ? parsed.amount.toString() : "");
-      setOcrCategory(parsed.category);
-      setOcrDesc(parsed.description);
-      setOcrDate(parsed.date);
+      // Update forms state with detected data from AI
+      setOcrAmount(parsed.amount ? parsed.amount.toString() : "");
+      setOcrCategory(parsed.category || "Belanja & Harian");
+      setOcrDesc(parsed.description || "Belanja Struk");
+      setOcrDate(parsed.date || new Date().toISOString().split("T")[0]);
       
-      showToast("Pemindaian selesai! Silakan periksa hasilnya.", "success");
+      setScanProgress(100);
+      showToast("Pemindaian dengan AI selesai!", "success");
     } catch (err: any) {
       console.error("OCR Scan Error:", err);
-      showToast("Gagal melakukan scan ocr. Masukkan data manual.", "error");
+      showToast(err.message || "Gagal melakukan scan OCR. Silakan coba lagi.", "error");
     } finally {
       setIsScanning(false);
     }
