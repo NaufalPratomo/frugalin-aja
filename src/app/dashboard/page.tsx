@@ -208,6 +208,9 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<TransactionType[]>([]);
   const [filterType, setFilterType] = useState<string>("ALL");
   const [monthlyLimit, setMonthlyLimit] = useState<number>(0);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [activeChartTab, setActiveChartTab] = useState<'flow' | 'assets'>('flow');
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   // Modals state
   const [showAccModal, setShowAccModal] = useState(false);
@@ -590,6 +593,126 @@ export default function DashboardPage() {
     return targetAccount?.type === filterType;
   });
 
+  // -------------------------------------------------------------
+  // LOGIKA GRAFIK HISTORY KEUANGAN
+  // -------------------------------------------------------------
+  const years = Array.from(
+    new Set([
+      new Date().getFullYear(),
+      ...transactions.map(t => new Date(t.date).getFullYear())
+    ])
+  ).sort((a, b) => b - a);
+
+  // Perhitungan Pemasukan & Pengeluaran bulanan untuk tahun terpilih
+  const monthlyIncome = Array(12).fill(0);
+  const monthlyExpense = Array(12).fill(0);
+
+  transactions.forEach((tx) => {
+    const txDate = new Date(tx.date);
+    if (txDate.getFullYear() === selectedYear) {
+      const monthIndex = txDate.getMonth();
+      if (tx.type === "INCOME") {
+        monthlyIncome[monthIndex] += tx.amount;
+      } else if (tx.type === "EXPENSE") {
+        monthlyExpense[monthIndex] += tx.amount;
+      }
+    }
+  });
+
+  // Perhitungan mundur Total Aset Gabungan per akhir bulan
+  const monthlyAssets = Array(12).fill(0);
+  const runningBalances: Record<string, number> = {};
+  accounts.forEach((acc) => {
+    runningBalances[acc._id] = acc.balance;
+  });
+
+  const sortedTx = [...transactions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  const nowTime = new Date().getTime();
+  let txIndex = 0;
+
+  for (let m = 11; m >= 0; m--) {
+    const endOfMonth = new Date(selectedYear, m + 1, 0, 23, 59, 59, 999);
+    
+    if (endOfMonth.getTime() > nowTime) {
+      // Jika bulan ini di masa depan, isi dengan net worth saat ini
+      monthlyAssets[m] = Object.values(runningBalances).reduce((sum, bal) => sum + bal, 0);
+    } else {
+      // Revert transaksi yang terjadi SETELAH endOfMonth
+      while (txIndex < sortedTx.length) {
+        const tx = sortedTx[txIndex];
+        const txTime = new Date(tx.date).getTime();
+        
+        if (txTime > endOfMonth.getTime()) {
+          // Revert transaksi ini dari runningBalances
+          if (runningBalances[tx.accountId] !== undefined) {
+            if (tx.type === "INCOME") {
+              runningBalances[tx.accountId] -= tx.amount;
+            } else if (tx.type === "EXPENSE") {
+              runningBalances[tx.accountId] += tx.amount;
+            }
+          }
+          txIndex++;
+        } else {
+          break;
+        }
+      }
+      
+      monthlyAssets[m] = Object.values(runningBalances).reduce((sum, bal) => sum + bal, 0);
+    }
+  }
+
+  // Format rupiah pendek
+  const formatRupiahShort = (value: number) => {
+    if (value >= 1_000_000_000) return `Rp ${(value / 1_000_000_000).toFixed(1)}M`;
+    if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}Jt`;
+    if (value >= 1_000) return `Rp ${(value / 1_000).toFixed(0)}Rb`;
+    return `Rp ${value}`;
+  };
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+
+  // SVG Config
+  const svgWidth = 600;
+  const svgHeight = 240;
+  const paddingLeft = 65;
+  const paddingRight = 20;
+  const paddingTop = 20;
+  const paddingBottom = 30;
+  
+  const chartWidth = svgWidth - paddingLeft - paddingRight;
+  const chartHeight = svgHeight - paddingTop - paddingBottom;
+
+  const maxFlow = Math.max(...monthlyIncome, ...monthlyExpense, 100000);
+  const maxAsset = Math.max(...monthlyAssets, 100000);
+
+  const yMaxFlow = Math.ceil(maxFlow * 1.15);
+  const yMaxAsset = Math.ceil(maxAsset * 1.15);
+
+  const getX = (index: number) => paddingLeft + (index * chartWidth) / 11;
+  const getXBar = (index: number) => paddingLeft + (index * chartWidth / 12) + (chartWidth / 24);
+  const getYFlow = (val: number) => (svgHeight - paddingBottom) - (val / yMaxFlow) * chartHeight;
+  const getYAsset = (val: number) => (svgHeight - paddingBottom) - (val / yMaxAsset) * chartHeight;
+
+  let assetPathD = "";
+  let assetAreaD = "";
+  for (let i = 0; i < 12; i++) {
+    const x = getX(i);
+    const y = getYAsset(monthlyAssets[i]);
+    if (i === 0) {
+      assetPathD += `M ${x} ${y}`;
+      assetAreaD += `M ${x} ${svgHeight - paddingBottom} L ${x} ${y}`;
+    } else {
+      assetPathD += ` L ${x} ${y}`;
+      assetAreaD += ` L ${x} ${y}`;
+    }
+  }
+  if (monthlyAssets.length > 0) {
+    assetAreaD += ` L ${getX(11)} ${svgHeight - paddingBottom} Z`;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-gray-800 antialiased flex flex-col">
       
@@ -763,6 +886,285 @@ export default function DashboardPage() {
                 <p className="text-[10px] text-red-500 font-bold tracking-wide animate-pulse mt-1">
                   Peringatan: Pengeluaran bulan ini sudah mencapai {limitPercentage.toFixed(0)}% dari batas limit anggaran!
                 </p>
+              )}
+            </div>
+          </div>
+
+          {/* CHART HISTORY KEUANGAN */}
+          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm relative">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm">Laporan Keuangan Bulanan</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Riwayat keuangan untuk memantau arus kas & aset Anda</p>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                {/* Tabs */}
+                <div className="flex bg-gray-55 p-1 rounded-xl border border-gray-100 gap-1">
+                  <button
+                    onClick={() => { setActiveChartTab('flow'); setHoveredIndex(null); }}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      activeChartTab === 'flow' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    Arus Kas
+                  </button>
+                  <button
+                    onClick={() => { setActiveChartTab('assets'); setHoveredIndex(null); }}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      activeChartTab === 'assets' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    Total Aset
+                  </button>
+                </div>
+
+                {/* Year Filter */}
+                <select
+                  value={selectedYear}
+                  onChange={(e) => { setSelectedYear(Number(e.target.value)); setHoveredIndex(null); }}
+                  className="border border-gray-200 bg-white text-gray-800 text-xs font-semibold px-2 py-1.5 rounded-xl outline-none focus:border-green-500 cursor-pointer"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* SVG Chart Container */}
+            <div className="relative w-full overflow-hidden select-none">
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto">
+                <defs>
+                  <linearGradient id="assetGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35"/>
+                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0"/>
+                  </linearGradient>
+                </defs>
+
+                {/* Horizontal Grid Lines & Y Axis Labels */}
+                {[0, 0.33, 0.66, 1].map((ratio, index) => {
+                  const valFlow = yMaxFlow * ratio;
+                  const valAsset = yMaxAsset * ratio;
+                  const y = (svgHeight - paddingBottom) - ratio * chartHeight;
+                  return (
+                    <g key={index} className="opacity-70">
+                      <line
+                        x1={paddingLeft}
+                        y1={y}
+                        x2={svgWidth - paddingRight}
+                        y2={y}
+                        stroke="#f3f4f6"
+                        strokeWidth={1}
+                        strokeDasharray={ratio === 0 ? "none" : "3 3"}
+                      />
+                      <text
+                        x={paddingLeft - 8}
+                        y={y + 4}
+                        textAnchor="end"
+                        className="text-[9px] fill-gray-400 font-semibold font-mono"
+                      >
+                        {formatRupiahShort(activeChartTab === 'flow' ? valFlow : valAsset)}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* X Axis Month Labels */}
+                {monthNames.map((month, index) => {
+                  const x = activeChartTab === 'flow' ? getXBar(index) : getX(index);
+                  return (
+                    <text
+                      key={index}
+                      x={x}
+                      y={svgHeight - 10}
+                      textAnchor="middle"
+                      className={`text-[9px] font-bold transition-all ${
+                        hoveredIndex === index ? 'fill-gray-900 scale-105' : 'fill-gray-400'
+                      }`}
+                    >
+                      {month}
+                    </text>
+                  );
+                })}
+
+                {/* Hover line indicator */}
+                {hoveredIndex !== null && (
+                  <line
+                    x1={activeChartTab === 'flow' ? getXBar(hoveredIndex) : getX(hoveredIndex)}
+                    y1={paddingTop}
+                    x2={activeChartTab === 'flow' ? getXBar(hoveredIndex) : getX(hoveredIndex)}
+                    y2={svgHeight - paddingBottom}
+                    stroke="#e5e7eb"
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                  />
+                )}
+
+                {/* Render Flow Bars */}
+                {activeChartTab === 'flow' && (
+                  <g>
+                    {/* Income & Expense Bars */}
+                    {monthlyIncome.map((inc, i) => {
+                      const exp = monthlyExpense[i];
+                      const xBar = getXBar(i);
+                      const yInc = getYFlow(inc);
+                      const yExp = getYFlow(exp);
+                      const hInc = Math.max(0, svgHeight - paddingBottom - yInc);
+                      const hExp = Math.max(0, svgHeight - paddingBottom - yExp);
+
+                      return (
+                        <g key={i}>
+                          {/* Income Bar */}
+                          {inc > 0 && (
+                            <rect
+                              x={xBar - 7}
+                              y={yInc}
+                              width={6}
+                              height={hInc}
+                              rx={1.5}
+                              fill="#10b981"
+                              className="transition-all duration-300 hover:opacity-90"
+                            />
+                          )}
+                          {/* Expense Bar */}
+                          {exp > 0 && (
+                            <rect
+                              x={xBar + 1}
+                              y={yExp}
+                              width={6}
+                              height={hExp}
+                              rx={1.5}
+                              fill="#f43f5e"
+                              className="transition-all duration-300 hover:opacity-90"
+                            />
+                          )}
+                          {/* Invisible hover area for tooltip */}
+                          <rect
+                            x={xBar - (chartWidth / 24)}
+                            y={paddingTop}
+                            width={chartWidth / 12}
+                            height={chartHeight}
+                            fill="transparent"
+                            className="cursor-pointer"
+                            onMouseEnter={() => setHoveredIndex(i)}
+                            onMouseLeave={() => setHoveredIndex(null)}
+                          />
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
+
+                {/* Render Asset Line & Area */}
+                {activeChartTab === 'assets' && (
+                  <g>
+                    {/* Area under the line */}
+                    <path
+                      d={assetAreaD}
+                      fill="url(#assetGradient)"
+                      className="transition-all duration-500"
+                    />
+                    {/* Line path */}
+                    <path
+                      d={assetPathD}
+                      fill="none"
+                      stroke="#3b82f6"
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="transition-all duration-500"
+                    />
+                    {/* Dots at months */}
+                    {monthlyAssets.map((asset, i) => {
+                      const x = getX(i);
+                      const y = getYAsset(asset);
+                      return (
+                        <g key={i}>
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r={hoveredIndex === i ? 5 : 3.5}
+                            fill={hoveredIndex === i ? "#3b82f6" : "#ffffff"}
+                            stroke="#3b82f6"
+                            strokeWidth={2.5}
+                            className="transition-all duration-200 cursor-pointer"
+                          />
+                          {/* Invisible hover area */}
+                          <rect
+                            x={x - (chartWidth / 22)}
+                            y={paddingTop}
+                            width={chartWidth / 11}
+                            height={chartHeight}
+                            fill="transparent"
+                            className="cursor-pointer"
+                            onMouseEnter={() => setHoveredIndex(i)}
+                            onMouseLeave={() => setHoveredIndex(null)}
+                          />
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
+              </svg>
+
+              {/* Hover Tooltip Overlay */}
+              {hoveredIndex !== null && (
+                <div
+                  className="absolute bg-white/95 backdrop-blur-md border border-gray-100 shadow-xl rounded-2xl p-3 text-xs pointer-events-none z-10 transition-all duration-100 ease-out"
+                  style={{
+                    left: `${activeChartTab === 'flow' ? getXBar(hoveredIndex) / 600 * 100 : getX(hoveredIndex) / 600 * 100}%`,
+                    top: '15px',
+                    transform: 'translateX(-50%)',
+                  }}
+                >
+                  <p className="font-extrabold text-gray-900 mb-1 text-[11px]">{monthNames[hoveredIndex]} {selectedYear}</p>
+                  {activeChartTab === 'flow' ? (
+                    <div className="space-y-1 text-[10px]">
+                      <p className="text-green-600 font-bold flex items-center justify-between gap-4">
+                        <span>Pemasukan:</span>
+                        <span>Rp {monthlyIncome[hoveredIndex].toLocaleString("id-ID")}</span>
+                      </p>
+                      <p className="text-red-500 font-bold flex items-center justify-between gap-4">
+                        <span>Pengeluaran:</span>
+                        <span>Rp {monthlyExpense[hoveredIndex].toLocaleString("id-ID")}</span>
+                      </p>
+                      <div className="border-t border-gray-100 my-1 pt-1" />
+                      <p className={`${monthlyIncome[hoveredIndex] - monthlyExpense[hoveredIndex] >= 0 ? "text-green-700" : "text-red-600"} font-black flex items-center justify-between gap-4`}>
+                        <span>Netto:</span>
+                        <span>Rp {(monthlyIncome[hoveredIndex] - monthlyExpense[hoveredIndex]).toLocaleString("id-ID")}</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 text-[10px]">
+                      <p className="text-blue-600 font-black flex items-center justify-between gap-4">
+                        <span>Total Aset:</span>
+                        <span>Rp {monthlyAssets[hoveredIndex].toLocaleString("id-ID")}</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Legend Indicators */}
+            <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-3 border-t border-gray-50 text-[10px] font-bold text-gray-500">
+              {activeChartTab === 'flow' ? (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 bg-green-600 rounded-sm" />
+                    <span>Pemasukan</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 bg-red-500 rounded-sm" />
+                    <span>Pengeluaran</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-full" />
+                  <span>Total Aset Gabungan</span>
+                </div>
               )}
             </div>
           </div>
