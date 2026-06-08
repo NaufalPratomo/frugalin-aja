@@ -24,6 +24,28 @@ interface TransactionType {
   date: string;
 }
 
+interface BillType {
+  _id: string;
+  name: string;
+  amount: number;
+  category: string;
+  dueDate: number;
+  accountId: string;
+  status: 'UNPAID' | 'PAID';
+  lastPaidDate?: string;
+}
+
+interface InsightType {
+  title: string;
+  type: 'SUCCESS' | 'WARNING' | 'INFO';
+  description: string;
+}
+
+interface InsightsResponseType {
+  financialScore: number;
+  insights: InsightType[];
+}
+
 function parseReceiptText(text: string) {
   const lines = text.split("\n");
   
@@ -219,6 +241,19 @@ export default function DashboardPage() {
   const [showEditBalanceModal, setShowEditBalanceModal] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState(false);
 
+  // Bill Tracker states
+  const [bills, setBills] = useState<BillType[]>([]);
+  const [showBillModal, setShowBillModal] = useState(false);
+  const [billName, setBillName] = useState("");
+  const [billAmount, setBillAmount] = useState("");
+  const [billCategory, setBillCategory] = useState("Tagihan & Pulsa");
+  const [billDueDate, setBillDueDate] = useState("1");
+  const [billAccount, setBillAccount] = useState("");
+
+  // AI Insights states
+  const [aiInsights, setAiInsights] = useState<InsightsResponseType | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   // OCR Scan states
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -268,6 +303,7 @@ export default function DashboardPage() {
         if (dataAcc.length > 0) {
           if (!txAccount) setTxAccount(dataAcc[0]._id);
           if (!ocrAccount) setOcrAccount(dataAcc[0]._id);
+          if (!billAccount) setBillAccount(dataAcc[0]._id);
         }
       }
 
@@ -288,6 +324,11 @@ export default function DashboardPage() {
         setMonthlyLimit(Number(dataLimit.monthlyLimit));
         setNewLimitValue(dataLimit.monthlyLimit.toString());
       }
+
+      // Ambil data tagihan berulang
+      const resBills = await fetch("/api/bills");
+      const dataBills = await resBills.json();
+      if (Array.isArray(dataBills)) setBills(dataBills);
     } catch (e) {
       console.error("Gagal sinkronisasi data keuangan", e);
       showToast("Gagal menyelaraskan data keuangan dari server.", "error");
@@ -332,6 +373,92 @@ export default function DashboardPage() {
       setDeferredPrompt(null);
       setIsInstallable(false);
       setIsStandalone(true);
+    }
+  };
+
+  const handleAddBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    showToast("Membuat tagihan berulang baru...", "info");
+    try {
+      const res = await fetch("/api/bills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: billName,
+          amount: Number(billAmount),
+          category: billCategory,
+          dueDate: Number(billDueDate),
+          accountId: billAccount
+        })
+      });
+      if (res.ok) {
+        showToast(`Tagihan "${billName}" berhasil didaftarkan!`, "success");
+        setShowBillModal(false);
+        setBillName("");
+        setBillAmount("");
+        fetchData();
+      } else {
+        showToast("Gagal membuat tagihan baru.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghubungkan ke server.", "error");
+    }
+  };
+
+  const handlePayBill = async (id: string) => {
+    showToast("Memproses pembayaran tagihan...", "info");
+    try {
+      const res = await fetch(`/api/bills/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "PAY" })
+      });
+      if (res.ok) {
+        showToast("Tagihan berhasil dibayar!", "success");
+        fetchData();
+      } else {
+        const errorData = await res.json();
+        showToast(errorData.message || "Gagal membayar tagihan.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat memproses pembayaran.", "error");
+    }
+  };
+
+  const handleDeleteBill = async (id: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus tagihan berulang ini?")) return;
+    showToast("Menghapus tagihan...", "info");
+    try {
+      const res = await fetch(`/api/bills/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        showToast("Tagihan berhasil dihapus!", "success");
+        fetchData();
+      } else {
+        showToast("Gagal menghapus tagihan.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghapus tagihan.", "error");
+    }
+  };
+
+  const handleGenerateInsights = async () => {
+    setIsAnalyzing(true);
+    showToast("AI sedang menganalisis transaksi Anda...", "info");
+    try {
+      const res = await fetch("/api/insights");
+      if (res.ok) {
+        const data = await res.json();
+        setAiInsights(data);
+        showToast("Analisis AI selesai dibuat!", "success");
+      } else {
+        showToast("Gagal memproses analisis AI.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat memproses analisis AI.", "error");
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -890,6 +1017,102 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* AI FINANCIAL INSIGHTS */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden">
+            {/* Sparkle background decoration */}
+            <div className="absolute -right-6 -top-6 text-green-50/50 pointer-events-none">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-24 h-24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 21L7.188 15.904 2 15L7.188 14.096 9 9L9.813 14.096 15 15Z" />
+              </svg>
+            </div>
+
+            <div className="flex justify-between items-center mb-4 relative z-10">
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                  AI Financial Insight
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">Analisis pengeluaran dan rekomendasi pemborosan Anda</p>
+              </div>
+              <button
+                disabled={isAnalyzing}
+                onClick={handleGenerateInsights}
+                className={`text-[11px] font-bold py-1.5 px-3 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+                  isAnalyzing 
+                    ? "bg-gray-100 text-gray-400 border-gray-100" 
+                    : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                }`}
+              >
+                {isAnalyzing ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                    Menganalisis...
+                  </>
+                ) : (
+                  "Mulai Analisis"
+                )}
+              </button>
+            </div>
+
+            {aiInsights ? (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                {/* Financial Health Score Banner */}
+                <div className="bg-gray-50 rounded-2xl p-4 flex items-center justify-between border border-gray-100">
+                  <div>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Skor Kesehatan Keuangan</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Dinilai oleh AI berdasarkan pengeluaran dan tabungan Anda</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className={`text-2xl font-black ${
+                        aiInsights.financialScore >= 80 ? "text-green-600" :
+                        aiInsights.financialScore >= 60 ? "text-amber-500" : "text-red-500"
+                      }`}>
+                        {aiInsights.financialScore}/100
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-full border-4 flex items-center justify-center font-bold text-xs" style={{
+                      borderColor: aiInsights.financialScore >= 80 ? '#10b981' : aiInsights.financialScore >= 60 ? '#f59e0b' : '#ef4444'
+                    }}>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Insights List */}
+                <div className="grid grid-cols-1 gap-3">
+                  {aiInsights.insights.map((ins, index) => (
+                    <div 
+                      key={index}
+                      className={`p-3.5 rounded-xl border text-xs leading-relaxed transition-all ${
+                        ins.type === "SUCCESS" ? "bg-green-50/50 border-green-100 text-green-900" :
+                        ins.type === "WARNING" ? "bg-red-50/40 border-red-100 text-red-900" :
+                        "bg-blue-50/40 border-blue-100 text-blue-900"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold mb-1">
+                        <span className={`w-2 h-2 rounded-full ${
+                          ins.type === "SUCCESS" ? "bg-green-500" :
+                          ins.type === "WARNING" ? "bg-amber-500" : "bg-blue-500"
+                        }`} />
+                        <span>{ins.title}</span>
+                      </div>
+                      <p className="text-gray-600 text-[11px]">{ins.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : isAnalyzing ? (
+              <div className="space-y-3 py-3">
+                <div className="h-10 bg-gray-100 rounded-xl animate-pulse" />
+                <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+                <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+              </div>
+            ) : (
+              <div className="border border-dashed border-gray-200 rounded-2xl p-6 text-center bg-gray-50/50">
+                <p className="text-xs text-gray-500">Klik tombol "Mulai Analisis" di atas untuk menganalisis arus kas dan pola belanja Anda.</p>
+              </div>
+            )}
+          </div>
+
           {/* CHART HISTORY KEUANGAN */}
           <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm relative">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
@@ -1217,54 +1440,156 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* AREA KANAN: BADGE FILTER & HISTORY MUTASI */}
-        <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col h-[580px]">
-          <h3 className="font-bold text-gray-900 mb-2 text-sm">Riwayat Transaksi</h3>
+        {/* AREA KANAN: TRACKER TAGIHAN & HISTORY MUTASI */}
+        <div className="space-y-6">
           
-          {/* BADGES */}
-          <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
-            {["ALL", "BANK", "CASH", "INVESTMENT"].map((b) => (
-              <button 
-                key={b} 
-                onClick={() => setFilterType(b)}
-                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all ${
-                  filterType === b ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                } cursor-pointer`}
+          {/* SUBSCRIPTION & BILL TRACKER */}
+          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                  Tagihan & Langganan
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">Pantau pengeluaran bulanan rutin Anda ({bills.length})</p>
+              </div>
+              <button
+                onClick={() => {
+                  if(accounts.length > 0) setShowBillModal(true);
+                  else alert("Tambahkan rekening bank terlebih dahulu!");
+                }}
+                className="text-[10px] text-green-600 font-bold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
               >
-                {b === "ALL" ? "Semua" : b}
+                + Tagihan
               </button>
-            ))}
+            </div>
+
+            <div className="space-y-3 overflow-y-auto max-h-[260px] pr-1">
+              {bills.map((bill) => {
+                const linkedAccount = accounts.find(a => a._id === bill.accountId);
+                const today = new Date();
+                const currentDay = today.getDate();
+                const daysLeft = bill.dueDate - currentDay;
+
+                // Tentukan level urgensi tenggat waktu
+                const isUrgent = bill.status === "UNPAID" && daysLeft >= 0 && daysLeft <= 3;
+
+                return (
+                  <div 
+                    key={bill._id} 
+                    className={`p-3 rounded-2xl border transition-all flex flex-col gap-2 relative group ${
+                      bill.status === "PAID" 
+                        ? "bg-gray-50/50 border-gray-100 opacity-70" 
+                        : isUrgent 
+                          ? "bg-red-50/50 border-red-200 animate-pulse" 
+                          : "bg-white border-gray-100 hover:border-green-200"
+                    }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-gray-900 text-xs">{bill.name}</span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                            bill.status === "PAID" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+                          }`}>
+                            {bill.status === "PAID" ? "Lunas" : "Belum Bayar"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{bill.category} • Rekening: {linkedAccount?.name || "-"}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-extrabold text-xs text-gray-900">Rp {bill.amount.toLocaleString("id-ID")}</p>
+                        <p className={`text-[10px] mt-0.5 font-bold ${
+                          bill.status === "PAID" 
+                            ? "text-gray-400" 
+                            : isUrgent 
+                              ? "text-red-500" 
+                              : "text-gray-500"
+                        }`}>
+                          Jatuh Tempo: Tgl {bill.dueDate}
+                          {bill.status === "UNPAID" && (
+                            daysLeft === 0 ? " (Hari Ini)" : daysLeft > 0 ? ` (${daysLeft} hari lagi)` : " (Lewat Tempo)"
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1.5 border-t border-gray-100/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleDeleteBill(bill._id)}
+                        className="text-[10px] text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer"
+                      >
+                        Hapus
+                      </button>
+                      {bill.status === "UNPAID" && (
+                        <button
+                          onClick={() => handlePayBill(bill._id)}
+                          className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-bold transition-all shadow-sm cursor-pointer"
+                        >
+                          Bayar Sekarang
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {bills.length === 0 && (
+                <div className="text-center py-8 text-xs text-gray-400 italic">
+                  Belum ada tagihan berulang terdaftar.
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* SCROLLABLE LIST MUTASI */}
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {filteredTransactions.map((tx) => {
-              const linkedAccount = accounts.find(a => a._id === tx.accountId);
-              return (
-                <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2 hover:bg-gray-50/50 rounded p-1 transition-all group">
-                  <div>
-                    <h5 className="font-bold text-gray-900">{tx.category} <span className="text-[10px] font-normal text-gray-400">({linkedAccount ? linkedAccount.name : 'Aset'})</span></h5>
-                    <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{tx.description || "-"}</p>
+          {/* RIWAYAT MUTASI */}
+          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col h-[400px]">
+            <h3 className="font-bold text-gray-900 mb-2 text-sm">Riwayat Transaksi</h3>
+            
+            {/* BADGES */}
+            <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
+              {["ALL", "BANK", "CASH", "INVESTMENT"].map((b) => (
+                <button 
+                  key={b} 
+                  onClick={() => setFilterType(b)}
+                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all ${
+                    filterType === b ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                  } cursor-pointer`}
+                >
+                  {b === "ALL" ? "Semua" : b}
+                </button>
+              ))}
+            </div>
+
+            {/* SCROLLABLE LIST MUTASI */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {filteredTransactions.map((tx) => {
+                const linkedAccount = accounts.find(a => a._id === tx.accountId);
+                return (
+                  <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2 hover:bg-gray-50/50 rounded p-1 transition-all group">
+                    <div>
+                      <h5 className="font-bold text-gray-900">{tx.category} <span className="text-[10px] font-normal text-gray-400">({linkedAccount ? linkedAccount.name : 'Aset'})</span></h5>
+                      <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{tx.description || "-"}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : "text-red-500"}`}>
+                        {tx.type === "INCOME" ? "+" : "-"} Rp {tx.amount.toLocaleString("id-ID")}
+                      </p>
+                      <button
+                        onClick={() => handleDeleteTransaction(tx._id)}
+                        className="text-gray-300 hover:text-red-500 p-1.5 rounded transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                        title="Hapus Transaksi"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : "text-red-500"}`}>
-                      {tx.type === "INCOME" ? "+" : "-"} Rp {tx.amount.toLocaleString("id-ID")}
-                    </p>
-                    <button
-                      onClick={() => handleDeleteTransaction(tx._id)}
-                      className="text-gray-300 hover:text-red-500 p-1.5 rounded transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-                      title="Hapus Transaksi"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {filteredTransactions.length === 0 && <p className="text-center text-xs text-gray-400 italic pt-16">Tidak ditemukan catatan keuangan.</p>}
+                );
+              })}
+              {filteredTransactions.length === 0 && <p className="text-center text-xs text-gray-400 italic pt-16">Tidak ditemukan catatan keuangan.</p>}
+            </div>
           </div>
+
         </div>
       </div>
 
@@ -1282,6 +1607,56 @@ export default function DashboardPage() {
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setShowLimitModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer">Batal</button>
                 <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Simpan Batas</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TAMBAH TAGIHAN BERULANG */}
+      {showBillModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
+            <h3 className="font-bold text-base mb-4">Tambah Tagihan Berulang</h3>
+            <form onSubmit={handleAddBill} className="space-y-3 text-xs">
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Nama Tagihan</label>
+                <input required type="text" placeholder="Contoh: Netflix, Wifi Rumah, BPJS" value={billName} onChange={e => setBillName(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Nominal Tagihan (Rp)</label>
+                <input required type="number" placeholder="0" value={billAmount} onChange={e => setBillAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block mb-1 font-semibold text-gray-600">Kategori</label>
+                  <select value={billCategory} onChange={e => setBillCategory(e.target.value)} className="w-full border p-2.5 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
+                    <option value="Tagihan & Pulsa">Tagihan & Pulsa</option>
+                    <option value="Hiburan & Rekreasi">Hiburan & Rekreasi</option>
+                    <option value="Kesehatan">Kesehatan</option>
+                    <option value="Transportasi">Transportasi</option>
+                    <option value="Belanja & Harian">Belanja & Harian</option>
+                    <option value="Makanan & Minuman">Makanan & Minuman</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block mb-1 font-semibold text-gray-600">Tanggal Jatuh Tempo</label>
+                  <select value={billDueDate} onChange={e => setBillDueDate(e.target.value)} className="w-full border p-2.5 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-mono font-bold">
+                    {Array.from({ length: 31 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>Tgl {i + 1}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Rekening Pembayaran Default</label>
+                <select value={billAccount} onChange={e => setBillAccount(e.target.value)} className="w-full border p-2.5 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
+                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowBillModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Simpan Tagihan</button>
               </div>
             </form>
           </div>
