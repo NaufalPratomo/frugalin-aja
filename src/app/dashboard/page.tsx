@@ -233,6 +233,7 @@ export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [activeChartTab, setActiveChartTab] = useState<'flow' | 'assets'>('flow');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [showBalance, setShowBalance] = useState(true);
 
   // Modals state
   const [showAccModal, setShowAccModal] = useState(false);
@@ -933,18 +934,38 @@ export default function DashboardPage() {
         <div className="md:col-span-2 space-y-6">
           
           {/* CARD TOTAL KEKAYAAN */}
-          <div className="bg-gradient-to-br from-green-600 to-emerald-700 p-6 rounded-3xl text-white shadow-lg shadow-green-100 relative overflow-hidden">
-            {/* Background pattern decoration */}
-            <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none transform translate-x-12 translate-y-12">
-              <svg width="200" height="200" viewBox="0 0 100 100" fill="currentColor">
+          <div className="bg-gradient-to-br from-emerald-800 via-emerald-950 to-slate-900 p-6 rounded-3xl text-white shadow-xl shadow-green-950/10 relative overflow-hidden">
+            {/* Ambient light effects in the card */}
+            <div className="absolute right-0 bottom-0 opacity-15 pointer-events-none transform translate-x-12 translate-y-12">
+              <svg width="220" height="220" viewBox="0 0 100 100" fill="currentColor">
                 <circle cx="50" cy="50" r="50" />
               </svg>
             </div>
 
             <div className="flex justify-between items-start relative z-10">
               <div>
-                <p className="text-sm opacity-80 font-medium">Total Aset Gabungan</p>
-                <h1 className="text-3xl md:text-4xl font-black mt-1">Rp {totalNetWorth.toLocaleString("id-ID")}</h1>
+                <p className="text-xs opacity-75 uppercase tracking-wider font-bold">Total Aset Gabungan</p>
+                <div className="flex items-center gap-2.5 mt-1.5">
+                  <h1 className="text-3xl md:text-4xl font-black tracking-tight">
+                    {showBalance ? `Rp ${totalNetWorth.toLocaleString("id-ID")}` : "Rp ••••••••"}
+                  </h1>
+                  <button 
+                    onClick={() => setShowBalance(!showBalance)} 
+                    className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer flex items-center justify-center"
+                    title={showBalance ? "Sembunyikan Saldo" : "Tampilkan Saldo"}
+                  >
+                    {showBalance ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
               {totalMonthlyInterest > 0 && (
                 <div className="bg-red-500/20 backdrop-blur-md px-3 py-1.5 rounded-xl border border-red-500/30 text-right animate-pulse">
@@ -955,20 +976,20 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-wrap gap-2.5 mt-6 relative z-10">
-              <button onClick={() => { if(accounts.length > 0) setShowTxModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-white text-green-700 font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-green-50 transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-green-600">
+              <button onClick={() => { if(accounts.length > 0) setShowTxModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-white text-emerald-950 font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-emerald-50 transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-emerald-600">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
                 Catat Manual
               </button>
-              <button onClick={() => { if(accounts.length > 0) setShowOcrModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-emerald-800 text-white font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-emerald-900 transition-all border border-emerald-700 shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
+              <button onClick={() => { if(accounts.length > 0) setShowOcrModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-emerald-800/80 text-white font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-emerald-900 transition-all border border-emerald-700/50 shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-emerald-300">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
                 </svg>
                 Scan Struk
               </button>
-              <button onClick={() => setShowAccModal(true)} className="bg-green-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-green-400 transition-all border border-green-400 cursor-pointer flex items-center justify-center gap-1.5">
+              <button onClick={() => setShowAccModal(true)} className="bg-emerald-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-emerald-500 transition-all border border-emerald-500/30 cursor-pointer flex items-center justify-center gap-1.5">
                 <span>+ Akun</span>
               </button>
             </div>
@@ -1056,23 +1077,37 @@ export default function DashboardPage() {
             {aiInsights ? (
               <div className="space-y-4 animate-in fade-in duration-300">
                 {/* Financial Health Score Banner */}
-                <div className="bg-gray-50 rounded-2xl p-4 flex items-center justify-between border border-gray-100">
+                <div className="bg-gray-55/50 backdrop-blur-sm rounded-2xl p-4 flex items-center justify-between border border-gray-100/80">
                   <div>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Skor Kesehatan Keuangan</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Dinilai oleh AI berdasarkan pengeluaran dan tabungan Anda</p>
+                    <p className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider">Skor Kesehatan Keuangan</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Penilaian AI atas efisiensi pengeluaran bulanan Anda</p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <span className={`text-2xl font-black ${
+                  <div className="flex items-center gap-4">
+                    <div className="relative w-16 h-16 flex items-center justify-center">
+                      <svg className="absolute w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="16" fill="transparent" stroke="#e5e7eb" strokeWidth="3" />
+                        <circle 
+                          cx="18" 
+                          cy="18" 
+                          r="16" 
+                          fill="transparent" 
+                          stroke={
+                            aiInsights.financialScore >= 80 ? '#10b981' : 
+                            aiInsights.financialScore >= 60 ? '#f59e0b' : '#ef4444'
+                          } 
+                          strokeWidth="3.2" 
+                          strokeDasharray="100 100"
+                          strokeDashoffset={100 - aiInsights.financialScore}
+                          strokeLinecap="round"
+                          className="transition-all duration-1000 ease-out"
+                        />
+                      </svg>
+                      <span className={`text-sm font-black ${
                         aiInsights.financialScore >= 80 ? "text-green-600" :
                         aiInsights.financialScore >= 60 ? "text-amber-500" : "text-red-500"
                       }`}>
-                        {aiInsights.financialScore}/100
+                        {aiInsights.financialScore}%
                       </span>
-                    </div>
-                    <div className="w-12 h-12 rounded-full border-4 flex items-center justify-center font-bold text-xs" style={{
-                      borderColor: aiInsights.financialScore >= 80 ? '#10b981' : aiInsights.financialScore >= 60 ? '#f59e0b' : '#ef4444'
-                    }}>
                     </div>
                   </div>
                 </div>
@@ -1564,10 +1599,22 @@ export default function DashboardPage() {
               {filteredTransactions.map((tx) => {
                 const linkedAccount = accounts.find(a => a._id === tx.accountId);
                 return (
-                  <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2 hover:bg-gray-50/50 rounded p-1 transition-all group">
-                    <div>
-                      <h5 className="font-bold text-gray-900">{tx.category} <span className="text-[10px] font-normal text-gray-400">({linkedAccount ? linkedAccount.name : 'Aset'})</span></h5>
-                      <p className="text-[10px] text-gray-400 truncate max-w-[140px]">{tx.description || "-"}</p>
+                  <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50/50 pb-2 hover:translate-x-1 hover:bg-gray-50/60 hover:shadow-[0_2px_8px_rgba(0,0,0,0.01)] rounded-xl p-2 transition-all duration-200 group">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        tx.type === "INCOME" ? "bg-green-500" : "bg-red-500"
+                      }`} />
+                      <div>
+                        <h5 className="font-bold text-gray-950 leading-tight">
+                          {tx.category}{" "}
+                          <span className="text-[9px] font-medium text-gray-400">
+                            ({linkedAccount ? linkedAccount.name : "Aset"})
+                          </span>
+                        </h5>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[140px]">
+                          {tx.description || "-"}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : "text-red-500"}`}>

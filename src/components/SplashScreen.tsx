@@ -1,29 +1,44 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 
 export default function SplashScreen() {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 150);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-green-50 via-white to-emerald-50 select-none overflow-hidden">
-      {/* Styles for premium animations */}
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950 select-none overflow-hidden text-white">
+      {/* Premium Styles */}
       <style jsx global>{`
         @keyframes floatLogo {
           0%, 100% {
             transform: translateY(0px) rotate(0deg);
           }
           50% {
-            transform: translateY(-12px) rotate(2deg);
+            transform: translateY(-10px) rotate(1deg);
           }
         }
         @keyframes pulseGlow {
           0%, 100% {
-            opacity: 0.4;
+            opacity: 0.3;
             transform: scale(0.95);
           }
           50% {
-            opacity: 0.8;
-            transform: scale(1.1);
+            opacity: 0.6;
+            transform: scale(1.05);
           }
         }
         @keyframes rotateRing {
@@ -34,112 +49,114 @@ export default function SplashScreen() {
             transform: rotate(360deg);
           }
         }
-        @keyframes loadingDot {
+        @keyframes moveBlob {
           0%, 100% {
-            opacity: 0.2;
+            transform: translate(0px, 0px) scale(1);
           }
-          50% {
-            opacity: 1;
+          33% {
+            transform: translate(30px, -50px) scale(1.1);
+          }
+          66% {
+            transform: translate(-20px, 20px) scale(0.95);
           }
         }
-        @keyframes bounceIn {
+        @keyframes shimmerSweep {
           0% {
-            opacity: 0;
-            transform: translateY(300px) scale(0.6);
+            left: -150%;
           }
-          60% {
-            opacity: 1;
-            transform: translateY(-20px) scale(1.04);
-          }
-          80% {
-            transform: translateY(10px) scale(0.98);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0) scale(1);
+          50%, 100% {
+            left: 150%;
           }
         }
-        .anim-bounce-entry {
-          animation: bounceIn 1.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        .anim-shimmer {
+          position: relative;
+          overflow: hidden;
+        }
+        .anim-shimmer::after {
+          content: "";
+          position: absolute;
+          top: 0;
+          height: 100%;
+          width: 50%;
+          background: linear-gradient(
+            to right,
+            transparent,
+            rgba(255, 255, 255, 0.13),
+            transparent
+          );
+          transform: skewX(-25deg);
+          left: -150%;
+          animation: shimmerSweep 3s infinite;
         }
         .anim-float {
           animation: floatLogo 4s ease-in-out infinite;
-          animation-delay: 1.3s; /* Start floating after bounce entry completes */
         }
         .anim-glow {
-          animation: pulseGlow 3s ease-in-out infinite;
+          animation: pulseGlow 4s ease-in-out infinite;
         }
         .anim-ring {
-          animation: rotateRing 8s linear infinite;
+          animation: rotateRing 10s linear infinite;
         }
         .anim-ring-reverse {
-          animation: rotateRing 12s linear infinite reverse;
+          animation: rotateRing 14s linear infinite reverse;
         }
-        .dot-1 {
-          animation: loadingDot 1.4s infinite;
-          animation-delay: 0s;
+        .anim-blob-1 {
+          animation: moveBlob 12s infinite alternate;
         }
-        .dot-2 {
-          animation: loadingDot 1.4s infinite;
-          animation-delay: 0.2s;
-        }
-        .dot-3 {
-          animation: loadingDot 1.4s infinite;
-          animation-delay: 0.4s;
+        .anim-blob-2 {
+          animation: moveBlob 16s infinite alternate-reverse;
         }
       `}</style>
 
-      {/* Decorative background grid elements */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:14px_24px] pointer-events-none" />
+      {/* Moving Ambient Mesh Blobs in Background */}
+      <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-emerald-900/30 rounded-full filter blur-[100px] anim-blob-1 pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-green-900/20 rounded-full filter blur-[120px] anim-blob-2 pointer-events-none" />
 
-      {/* Main Container */}
-      <div className="relative flex flex-col items-center max-w-sm px-8 text-center anim-bounce-entry">
+      {/* Decorative Grid Overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+
+      {/* Main Content Card */}
+      <div className="relative flex flex-col items-center max-w-sm px-8 text-center z-10">
         
-        {/* Glow behind the logo */}
-        <div className="absolute top-1/4 -translate-y-1/2 w-64 h-64 bg-green-300 rounded-full mix-blend-multiply filter blur-3xl anim-glow opacity-50" />
-        <div className="absolute top-1/4 -translate-y-1/2 w-64 h-64 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl anim-glow opacity-40 [animation-delay:1.5s]" />
+        {/* Glow backdrop behind the logo */}
+        <div className="absolute w-48 h-48 bg-emerald-500/10 rounded-full filter blur-[40px] anim-glow" />
 
         {/* Logo Container */}
         <div className="relative w-36 h-36 flex items-center justify-center mb-8">
-          
           {/* Animated Ring 1 */}
-          <div className="absolute inset-0 rounded-full border-2 border-dashed border-green-200 anim-ring" />
-          
+          <div className="absolute inset-0 rounded-full border border-dashed border-emerald-500/30 anim-ring" />
           {/* Animated Ring 2 (Outer) */}
-          <div className="absolute -inset-4 rounded-full border border-green-100/50 anim-ring-reverse" />
+          <div className="absolute -inset-4 rounded-full border border-emerald-500/10 anim-ring-reverse" />
           
-          {/* Glowing Shadow */}
-          <div className="absolute w-24 h-24 rounded-full bg-green-500/20 filter blur-xl" />
-
-          {/* Logo Asset */}
-          <div className="relative w-28 h-28 rounded-3xl bg-white shadow-2xl p-2 border border-green-50/50 flex items-center justify-center anim-float overflow-hidden">
+          {/* Logo Box */}
+          <div className="relative w-28 h-28 rounded-3xl bg-gray-900 border border-emerald-500/20 flex items-center justify-center anim-float shadow-[0_0_30px_rgba(16,185,129,0.1)] overflow-hidden anim-shimmer">
             <Image
               src="/favico&PWAimg.png"
               alt="Frugalin Logo"
               width={96}
               height={96}
-              className="object-contain"
+              className="object-contain filter brightness-110 drop-shadow-[0_0_8px_rgba(16,185,129,0.2)]"
               priority
             />
           </div>
         </div>
 
         {/* Text Area */}
-        <div className="relative z-10 flex flex-col items-center">
-          <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 mb-2">
-            frugalin<span className="text-green-600">.aja</span>
+        <div className="space-y-4">
+          <h1 className="text-3xl font-black tracking-tight text-white">
+            frugalin<span className="text-emerald-500">.aja</span>
           </h1>
           
-          {/* Subtitle / Loading Indicator */}
-          <div className="flex items-center gap-1.5 mt-2 bg-white/70 backdrop-blur-md px-4 py-2 rounded-full border border-green-100/30 shadow-sm">
-            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Menyelaraskan dompet digital
-            </span>
-            <span className="flex items-center text-xs font-bold text-green-600">
-              <span className="dot-1 font-mono">.</span>
-              <span className="dot-2 font-mono">.</span>
-              <span className="dot-3 font-mono">.</span>
-            </span>
+          {/* Subtitle / Loading State */}
+          <div className="flex flex-col items-center gap-2">
+            
+            {/* Glowing Neon Progress Line */}
+            <div className="w-48 h-1 bg-gray-800 rounded-full overflow-hidden mt-1 relative">
+              <div 
+                style={{ width: `${progress}%` }} 
+                className="h-full bg-gradient-to-r from-emerald-500 to-green-400 rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+              />
+            </div>
           </div>
         </div>
 
