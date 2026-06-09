@@ -1823,7 +1823,7 @@ export default function DashboardPage() {
             {/* Dynamic Insights Panel */}
             <div className="mt-4 pt-4 border-t border-gray-100">
               <h4 className="font-bold text-gray-800 text-xs flex items-center gap-1.5 mb-2.5">
-                <span>Wawasan Keuangan Otomatis</span>
+                <span>Wawasan Keuangan</span>
               </h4>
               <div className="space-y-2">
                 {getDynamicInsights().map((insight, idx) => (
