@@ -35,16 +35,7 @@ interface BillType {
   lastPaidDate?: string;
 }
 
-interface InsightType {
-  title: string;
-  type: 'SUCCESS' | 'WARNING' | 'INFO';
-  description: string;
-}
 
-interface InsightsResponseType {
-  financialScore: number;
-  insights: InsightType[];
-}
 
 function parseReceiptText(text: string) {
   const lines = text.split("\n");
@@ -233,7 +224,7 @@ export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [activeChartTab, setActiveChartTab] = useState<'flow' | 'assets'>('flow');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [showBalance, setShowBalance] = useState(true);
+  const [showBalance, setShowBalance] = useState(false);
 
   // Modals state
   const [showAccModal, setShowAccModal] = useState(false);
@@ -251,9 +242,7 @@ export default function DashboardPage() {
   const [billDueDate, setBillDueDate] = useState("1");
   const [billAccount, setBillAccount] = useState("");
 
-  // AI Insights states
-  const [aiInsights, setAiInsights] = useState<InsightsResponseType | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
 
   // OCR Scan states
   const [isScanning, setIsScanning] = useState(false);
@@ -441,25 +430,6 @@ export default function DashboardPage() {
       }
     } catch (err) {
       showToast("Kesalahan saat menghapus tagihan.", "error");
-    }
-  };
-
-  const handleGenerateInsights = async () => {
-    setIsAnalyzing(true);
-    showToast("AI sedang menganalisis transaksi Anda...", "info");
-    try {
-      const res = await fetch("/api/insights");
-      if (res.ok) {
-        const data = await res.json();
-        setAiInsights(data);
-        showToast("Analisis AI selesai dibuat!", "success");
-      } else {
-        showToast("Gagal memproses analisis AI.", "error");
-      }
-    } catch (err) {
-      showToast("Kesalahan saat memproses analisis AI.", "error");
-    } finally {
-      setIsAnalyzing(false);
     }
   };
 
@@ -1036,116 +1006,6 @@ export default function DashboardPage() {
                 </p>
               )}
             </div>
-          </div>
-
-          {/* AI FINANCIAL INSIGHTS */}
-          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden">
-            {/* Sparkle background decoration */}
-            <div className="absolute -right-6 -top-6 text-green-50/50 pointer-events-none">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-24 h-24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 21L7.188 15.904 2 15L7.188 14.096 9 9L9.813 14.096 15 15Z" />
-              </svg>
-            </div>
-
-            <div className="flex justify-between items-center mb-4 relative z-10">
-              <div>
-                <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-                  AI Financial Insight
-                </h3>
-                <p className="text-xs text-gray-400 mt-0.5">Analisis pengeluaran dan rekomendasi pemborosan Anda</p>
-              </div>
-              <button
-                disabled={isAnalyzing}
-                onClick={handleGenerateInsights}
-                className={`text-[11px] font-bold py-1.5 px-3 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
-                  isAnalyzing 
-                    ? "bg-gray-100 text-gray-400 border-gray-100" 
-                    : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                }`}
-              >
-                {isAnalyzing ? (
-                  <>
-                    <div className="w-3 h-3 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-                    Menganalisis...
-                  </>
-                ) : (
-                  "Mulai Analisis"
-                )}
-              </button>
-            </div>
-
-            {aiInsights ? (
-              <div className="space-y-4 animate-in fade-in duration-300">
-                {/* Financial Health Score Banner */}
-                <div className="bg-gray-55/50 backdrop-blur-sm rounded-2xl p-4 flex items-center justify-between border border-gray-100/80">
-                  <div>
-                    <p className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider">Skor Kesehatan Keuangan</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Penilaian AI atas efisiensi pengeluaran bulanan Anda</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="relative w-16 h-16 flex items-center justify-center">
-                      <svg className="absolute w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                        <circle cx="18" cy="18" r="16" fill="transparent" stroke="#e5e7eb" strokeWidth="3" />
-                        <circle 
-                          cx="18" 
-                          cy="18" 
-                          r="16" 
-                          fill="transparent" 
-                          stroke={
-                            aiInsights.financialScore >= 80 ? '#10b981' : 
-                            aiInsights.financialScore >= 60 ? '#f59e0b' : '#ef4444'
-                          } 
-                          strokeWidth="3.2" 
-                          strokeDasharray="100 100"
-                          strokeDashoffset={100 - aiInsights.financialScore}
-                          strokeLinecap="round"
-                          className="transition-all duration-1000 ease-out"
-                        />
-                      </svg>
-                      <span className={`text-sm font-black ${
-                        aiInsights.financialScore >= 80 ? "text-green-600" :
-                        aiInsights.financialScore >= 60 ? "text-amber-500" : "text-red-500"
-                      }`}>
-                        {aiInsights.financialScore}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Insights List */}
-                <div className="grid grid-cols-1 gap-3">
-                  {aiInsights.insights.map((ins, index) => (
-                    <div 
-                      key={index}
-                      className={`p-3.5 rounded-xl border text-xs leading-relaxed transition-all ${
-                        ins.type === "SUCCESS" ? "bg-green-50/50 border-green-100 text-green-900" :
-                        ins.type === "WARNING" ? "bg-red-50/40 border-red-100 text-red-900" :
-                        "bg-blue-50/40 border-blue-100 text-blue-900"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 font-bold mb-1">
-                        <span className={`w-2 h-2 rounded-full ${
-                          ins.type === "SUCCESS" ? "bg-green-500" :
-                          ins.type === "WARNING" ? "bg-amber-500" : "bg-blue-500"
-                        }`} />
-                        <span>{ins.title}</span>
-                      </div>
-                      <p className="text-gray-600 text-[11px]">{ins.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : isAnalyzing ? (
-              <div className="space-y-3 py-3">
-                <div className="h-10 bg-gray-100 rounded-xl animate-pulse" />
-                <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
-                <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
-              </div>
-            ) : (
-              <div className="border border-dashed border-gray-200 rounded-2xl p-6 text-center bg-gray-50/50">
-                <p className="text-xs text-gray-500">Klik tombol "Mulai Analisis" di atas untuk menganalisis arus kas dan pola belanja Anda.</p>
-              </div>
-            )}
           </div>
 
           {/* CHART HISTORY KEUANGAN */}

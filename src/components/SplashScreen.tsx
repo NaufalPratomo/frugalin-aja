@@ -20,7 +20,7 @@ export default function SplashScreen() {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950 select-none overflow-hidden text-white">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-50 select-none overflow-hidden text-slate-800">
       {/* Premium Styles */}
       <style jsx global>{`
         @keyframes floatLogo {
@@ -33,11 +33,11 @@ export default function SplashScreen() {
         }
         @keyframes pulseGlow {
           0%, 100% {
-            opacity: 0.3;
+            opacity: 0.4;
             transform: scale(0.95);
           }
           50% {
-            opacity: 0.6;
+            opacity: 0.8;
             transform: scale(1.05);
           }
         }
@@ -81,7 +81,7 @@ export default function SplashScreen() {
           background: linear-gradient(
             to right,
             transparent,
-            rgba(255, 255, 255, 0.13),
+            rgba(16, 185, 129, 0.1),
             transparent
           );
           transform: skewX(-25deg);
@@ -109,33 +109,33 @@ export default function SplashScreen() {
       `}</style>
 
       {/* Moving Ambient Mesh Blobs in Background */}
-      <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-emerald-900/30 rounded-full filter blur-[100px] anim-blob-1 pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-green-900/20 rounded-full filter blur-[120px] anim-blob-2 pointer-events-none" />
+      <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-emerald-100/60 rounded-full filter blur-[100px] anim-blob-1 pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-green-100/50 rounded-full filter blur-[120px] anim-blob-2 pointer-events-none" />
 
       {/* Decorative Grid Overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,0,0,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
 
       {/* Main Content Card */}
       <div className="relative flex flex-col items-center max-w-sm px-8 text-center z-10">
         
         {/* Glow backdrop behind the logo */}
-        <div className="absolute w-48 h-48 bg-emerald-500/10 rounded-full filter blur-[40px] anim-glow" />
+        <div className="absolute w-48 h-48 bg-emerald-100 rounded-full filter blur-[40px] anim-glow" />
 
         {/* Logo Container */}
         <div className="relative w-36 h-36 flex items-center justify-center mb-8">
           {/* Animated Ring 1 */}
-          <div className="absolute inset-0 rounded-full border border-dashed border-emerald-500/30 anim-ring" />
+          <div className="absolute inset-0 rounded-full border border-dashed border-emerald-500/20 anim-ring" />
           {/* Animated Ring 2 (Outer) */}
           <div className="absolute -inset-4 rounded-full border border-emerald-500/10 anim-ring-reverse" />
           
           {/* Logo Box */}
-          <div className="relative w-28 h-28 rounded-3xl bg-gray-900 border border-emerald-500/20 flex items-center justify-center anim-float shadow-[0_0_30px_rgba(16,185,129,0.1)] overflow-hidden anim-shimmer">
+          <div className="relative w-28 h-28 rounded-3xl bg-white border border-emerald-100 flex items-center justify-center anim-float shadow-[0_10px_30px_rgba(16,185,129,0.08)] overflow-hidden anim-shimmer">
             <Image
               src="/favico&PWAimg.png"
               alt="Frugalin Logo"
               width={96}
               height={96}
-              className="object-contain filter brightness-110 drop-shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+              className="object-contain filter drop-shadow-[0_4px_6px_rgba(16,185,129,0.1)]"
               priority
             />
           </div>
@@ -143,18 +143,18 @@ export default function SplashScreen() {
 
         {/* Text Area */}
         <div className="space-y-4">
-          <h1 className="text-3xl font-black tracking-tight text-white">
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">
             frugalin<span className="text-emerald-500">.aja</span>
           </h1>
           
           {/* Subtitle / Loading State */}
           <div className="flex flex-col items-center gap-2">
             
-            {/* Glowing Neon Progress Line */}
-            <div className="w-48 h-1 bg-gray-800 rounded-full overflow-hidden mt-1 relative">
+            {/* Glowing Progress Line */}
+            <div className="w-48 h-1 bg-slate-200 rounded-full overflow-hidden mt-1 relative">
               <div 
                 style={{ width: `${progress}%` }} 
-                className="h-full bg-gradient-to-r from-emerald-500 to-green-400 rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+                className="h-full bg-gradient-to-r from-emerald-500 to-green-500 rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
               />
             </div>
           </div>
