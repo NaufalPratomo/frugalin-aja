@@ -1561,7 +1561,7 @@ export default function DashboardPage() {
             </div>
 
             {/* SVG Chart Container */}
-            <div className="relative w-full overflow-hidden select-none">
+            <div className="relative w-full overflow-visible select-none" onClick={() => setHoveredIndex(null)}>
               <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto">
                 <defs>
                   <linearGradient id="assetGradient" x1="0" y1="0" x2="0" y2="1">
@@ -1601,15 +1601,23 @@ export default function DashboardPage() {
                 {/* X Axis Month Labels */}
                 {monthNames.map((month, index) => {
                   const x = activeChartTab === 'flow' ? getXBar(index) : getX(index);
+                  const isHovered = hoveredIndex === index;
                   return (
                     <text
                       key={index}
                       x={x}
                       y={svgHeight - 10}
                       textAnchor="middle"
-                      className={`text-[9px] font-bold transition-all ${
-                        hoveredIndex === index ? 'fill-gray-900 scale-105' : 'fill-gray-400'
+                      className={`text-[9px] transition-all ${
+                        isHovered 
+                          ? activeChartTab === 'flow'
+                            ? 'fill-emerald-600 font-black'
+                            : 'fill-blue-600 font-black'
+                          : 'fill-gray-400 font-bold'
                       }`}
+                      style={{
+                        fontSize: isHovered ? '10px' : '9px'
+                      }}
                     >
                       {month}
                     </text>
@@ -1675,8 +1683,16 @@ export default function DashboardPage() {
                             height={chartHeight}
                             fill="transparent"
                             className="cursor-pointer"
-                            onMouseEnter={() => setHoveredIndex(i)}
-                            onMouseLeave={() => setHoveredIndex(null)}
+                            onMouseEnter={() => {
+                              if (window.matchMedia('(hover: hover)').matches) setHoveredIndex(i);
+                            }}
+                            onMouseLeave={() => {
+                              if (window.matchMedia('(hover: hover)').matches) setHoveredIndex(null);
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHoveredIndex(prev => prev === i ? null : i);
+                            }}
                           />
                         </g>
                       );
@@ -1726,8 +1742,16 @@ export default function DashboardPage() {
                             height={chartHeight}
                             fill="transparent"
                             className="cursor-pointer"
-                            onMouseEnter={() => setHoveredIndex(i)}
-                            onMouseLeave={() => setHoveredIndex(null)}
+                            onMouseEnter={() => {
+                              if (window.matchMedia('(hover: hover)').matches) setHoveredIndex(i);
+                            }}
+                            onMouseLeave={() => {
+                              if (window.matchMedia('(hover: hover)').matches) setHoveredIndex(null);
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHoveredIndex(prev => prev === i ? null : i);
+                            }}
                           />
                         </g>
                       );
