@@ -42,6 +42,29 @@ export async function POST(req) {
   }
 }
 
+export async function PUT(req) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+
+    const { id, category, limit } = await req.json();
+    if (!id || !category || limit === undefined) {
+      return NextResponse.json({ message: "ID, kategori dan limit wajib diisi" }, { status: 400 });
+    }
+
+    await dbConnect();
+    const budget = await Budget.findOneAndUpdate(
+      { _id: id, userId: session.user.id },
+      { category, limit: Number(limit) },
+      { new: true }
+    );
+
+    return NextResponse.json(budget, { status: 200 });
+  } catch (error) {
+    return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req) {
   try {
     const session = await getServerSession(authOptions);

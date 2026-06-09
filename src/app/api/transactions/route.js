@@ -30,8 +30,13 @@ export async function POST(req) {
       return NextResponse.json({ message: "Field wajib tidak boleh kosong" }, { status: 400 });
     }
 
-    if (type === "TRANSFER" && !toAccountId) {
-      return NextResponse.json({ message: "Rekening tujuan wajib diisi untuk transfer" }, { status: 400 });
+    if (type === "TRANSFER") {
+      if (!toAccountId) {
+        return NextResponse.json({ message: "Rekening tujuan wajib diisi untuk transfer" }, { status: 400 });
+      }
+      if (accountId === toAccountId) {
+        return NextResponse.json({ message: "Rekening asal dan tujuan tidak boleh sama" }, { status: 400 });
+      }
     }
 
     await dbConnect();

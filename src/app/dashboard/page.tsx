@@ -228,6 +228,37 @@ function parseReceiptText(text: string) {
   };
 }
 
+function getBudgetCategoryGroup(category: string): string {
+  if (!category) return "Lainnya";
+  const cat = category.toLowerCase().trim();
+  
+  if (/makan|minum|kopi|cafe|resto|warung|food|beverage|coffe|teh|chicken|burger|pizza|kuliner|dapur|roti|bakery|gofood|grabfood|shopeefood/i.test(cat)) {
+    return "Makanan & Minuman";
+  }
+  
+  if (/transport|bensin|pertamina|spbu|shell|gojek|grab|uber|ojek|taxi|taksi|tol|parkir|tiket|kereta|pesawat|travel|krl|mrt|goride|grabcab|gocar/i.test(cat)) {
+    return "Transportasi";
+  }
+  
+  if (/belanja|harian|mart|indo|alfa|super|pasar|hiper|shop|store|sabun|odol|detergen|susu|sembako|minyak|beras|trans|carefour|lotte|baju|celana|sepatu|fashion|mall/i.test(cat)) {
+    return "Belanja & Harian";
+  }
+  
+  if (/tagihan|pulsa|wifi|internet|netflix|spotify|youtube|disney|listrik|token|bpjs|pdam|langganan|subscription/i.test(cat)) {
+    return "Tagihan & Pulsa";
+  }
+
+  if (/sehat|sakit|dokter|obat|rs|rumah sakit|klinik|apotek|vitamin/i.test(cat)) {
+    return "Kesehatan";
+  }
+
+  if (/hiburan|rekreasi|nonton|bioskop|travel|hotel|liburan|game|topup game|playstation/i.test(cat)) {
+    return "Hiburan & Rekreasi";
+  }
+
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -247,6 +278,7 @@ export default function DashboardPage() {
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [budgetCategory, setBudgetCategory] = useState("");
   const [budgetLimit, setBudgetLimit] = useState("");
+  const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
 
   // Savings Goals state
   const [savings, setSavings] = useState<SavingsGoalType[]>([]);
@@ -299,7 +331,7 @@ export default function DashboardPage() {
   const [txToAccount, setTxToAccount] = useState(""); // Rekening tujuan transfer
   const [txType, setTxType] = useState("EXPENSE");
   const [txAmount, setTxAmount] = useState("");
-  const [txCategory, setTxCategory] = useState("Makanan");
+  const [txCategory, setTxCategory] = useState("");
   const [txDesc, setTxDesc] = useState("");
 
   // Edit Balance state
@@ -517,6 +549,10 @@ export default function DashboardPage() {
     showToast("Mencatat transaksi keuangan...", "info");
     try {
       const isTransfer = txType === "TRANSFER";
+      if (isTransfer && txAccount === txToAccount) {
+        showToast("Rekening asal dan tujuan tidak boleh sama!", "error");
+        return;
+      }
       const payload = {
         accountId: txAccount,
         toAccountId: isTransfer ? txToAccount : undefined,
@@ -535,6 +571,7 @@ export default function DashboardPage() {
         showToast(isTransfer ? "Dana berhasil ditransfer!" : "Transaksi keuangan berhasil dicatat!", "success");
         setShowTxModal(false);
         setTxAmount("");
+        setTxCategory("");
         setTxDesc("");
         fetchData();
       } else {
@@ -548,21 +585,30 @@ export default function DashboardPage() {
 
   const handleAddBudget = async (e: React.FormEvent) => {
     e.preventDefault();
-    showToast("Menyimpan batas anggaran kategori...", "info");
+    showToast(editingBudgetId ? "Mengubah batas anggaran kategori..." : "Menyimpan batas anggaran kategori...", "info");
     try {
-      const res = await fetch("/api/budgets", {
-        method: "POST",
+      const url = "/api/budgets";
+      const method = editingBudgetId ? "PUT" : "POST";
+      const body = editingBudgetId 
+        ? { id: editingBudgetId, category: budgetCategory, limit: Number(budgetLimit) }
+        : { category: budgetCategory, limit: Number(budgetLimit) };
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          category: budgetCategory,
-          limit: Number(budgetLimit)
-        })
+        body: JSON.stringify(body)
       });
       if (res.ok) {
-        showToast(`Batas anggaran kategori "${budgetCategory}" disimpan!`, "success");
+        showToast(
+          editingBudgetId 
+            ? `Batas anggaran kategori "${budgetCategory}" berhasil diubah!` 
+            : `Batas anggaran kategori "${budgetCategory}" disimpan!`, 
+          "success"
+        );
         setShowBudgetModal(false);
         setBudgetCategory("");
         setBudgetLimit("");
+        setEditingBudgetId(null);
         fetchData();
       } else {
         showToast("Gagal menyimpan anggaran.", "error");
@@ -956,7 +1002,8 @@ export default function DashboardPage() {
     if (tx.type === "EXPENSE") {
       const txDate = new Date(tx.date);
       if (txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear) {
-        categoryExpenses[tx.category] = (categoryExpenses[tx.category] || 0) + tx.amount;
+        const group = getBudgetCategoryGroup(tx.category);
+        categoryExpenses[group] = (categoryExpenses[group] || 0) + tx.amount;
       }
     }
   });
@@ -979,7 +1026,7 @@ export default function DashboardPage() {
       const txDate = new Date(tx.date);
       const m = txDate.getMonth();
       const y = txDate.getFullYear();
-      const cat = tx.category;
+      const cat = getBudgetCategoryGroup(tx.category);
 
       if (m === curMonth && y === curYear) {
         categoryTotalsCur[cat] = (categoryTotalsCur[cat] || 0) + tx.amount;
@@ -1084,6 +1131,71 @@ export default function DashboardPage() {
     assetAreaD += ` L ${getX(11)} ${svgHeight - paddingBottom} Z`;
   }
 
+  const renderTransactionHistory = (customHeightClass: string) => {
+    return (
+      <div className={`bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col ${customHeightClass}`}>
+        <h3 className="font-bold text-gray-900 mb-2 text-sm">Riwayat Transaksi</h3>
+        
+        {/* BADGES */}
+        <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
+          {["ALL", "BANK", "CASH", "INVESTMENT"].map((b) => (
+            <button 
+              key={b} 
+              onClick={() => setFilterType(b)}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all ${
+                filterType === b ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+              } cursor-pointer`}
+            >
+              {b === "ALL" ? "Semua" : b}
+            </button>
+          ))}
+        </div>
+
+        {/* SCROLLABLE LIST MUTASI */}
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          {filteredTransactions.map((tx) => {
+            const linkedAccount = accounts.find(a => a._id === tx.accountId);
+            return (
+              <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50/50 pb-2 hover:translate-x-1 hover:bg-gray-50/60 hover:shadow-[0_2px_8px_rgba(0,0,0,0.01)] rounded-xl p-2 transition-all duration-200 group">
+                <div className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    tx.type === "INCOME" ? "bg-green-500" : tx.type === "EXPENSE" ? "bg-red-500" : "bg-blue-500"
+                  }`} />
+                  <div>
+                    <h5 className="font-bold text-gray-950 leading-tight">
+                      {tx.category}{" "}
+                      <span className="text-[9px] font-medium text-gray-400">
+                        ({linkedAccount ? linkedAccount.name : "Aset"})
+                      </span>
+                    </h5>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[140px]">
+                      {tx.description || "-"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : tx.type === "EXPENSE" ? "text-red-500" : "text-blue-600"}`}>
+                    {tx.type === "INCOME" ? "+" : tx.type === "EXPENSE" ? "-" : "⇄"} Rp {tx.amount.toLocaleString("id-ID")}
+                  </p>
+                  <button
+                    onClick={() => handleDeleteTransaction(tx._id)}
+                    className="text-gray-300 hover:text-red-500 p-1.5 rounded transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                    title="Hapus Transaksi"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {filteredTransactions.length === 0 && <p className="text-center text-xs text-gray-400 italic pt-16">Tidak ditemukan catatan keuangan.</p>}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-gray-800 antialiased flex flex-col">
       
@@ -1171,10 +1283,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="w-full max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="w-full max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         
-        {/* AREA KIRI: CARD UTAMA, LIMIT TRACKER & DAFTAR ASET */}
-        <div className="md:col-span-2 space-y-6">
+        {/* LEFT COLUMN: Card, Accounts, Limit Budget, Chart */}
+        <div className="md:col-span-2 space-y-6 flex flex-col">
           
           {/* CARD TOTAL KEKAYAAN */}
           <div className="bg-gradient-to-br from-emerald-800 via-emerald-950 to-slate-900 p-6 rounded-3xl text-white shadow-xl shadow-green-950/10 relative overflow-hidden">
@@ -1219,7 +1331,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-wrap gap-2.5 mt-6 relative z-10">
-              <button onClick={() => { if(accounts.length > 0) setShowTxModal(true); else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-white text-emerald-950 font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-emerald-50 transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
+              <button onClick={() => { if(accounts.length > 0) { setTxAmount(""); setTxCategory(""); setTxDesc(""); setShowTxModal(true); } else alert("Tambahkan rekening bank terlebih dahulu!"); }} className="flex-1 min-w-[120px] bg-white text-emerald-950 font-bold py-2.5 px-3 rounded-xl text-xs hover:bg-emerald-50 transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-emerald-600">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -1238,6 +1350,53 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* DOMPET & REKENING BERJALAN */}
+          <div className="w-full">
+            <h3 className="font-bold text-gray-900 mb-3 text-sm">Dompet & Rekening Berjalan ({accounts.length})</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {accounts.map((acc) => (
+                <div key={acc._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center group hover:border-green-200 transition-all">
+                  <div>
+                    <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold ${
+                      acc.type === "BANK" ? "bg-blue-55 text-blue-600" :
+                      acc.type === "INVESTMENT" ? "bg-purple-55 text-purple-600" : "bg-amber-55 text-amber-600"
+                    }`}>
+                      {acc.type}
+                    </span>
+                    <h4 className="font-bold text-gray-900 mt-1 text-sm">{acc.name}</h4>
+                    {acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0 ? (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1 bg-red-50/50 px-2 py-0.5 rounded-md w-fit">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-red-400 animate-pulse">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clipRule="evenodd" />
+                        </svg>
+                        Bunga: Rp {acc.monthlyInterest.toLocaleString("id-ID")}/bln
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="text-right flex items-center gap-2">
+                    <p className="font-extrabold text-sm text-gray-900">Rp {acc.balance.toLocaleString("id-ID")}</p>
+                    <button 
+                      onClick={() => {
+                        setSelectedAccId(acc._id);
+                        setSelectedAccName(acc.name);
+                        setSelectedAccType(acc.type);
+                        setNewBalanceValue(acc.balance.toString());
+                        setNewInterestValue((acc.monthlyInterest || 0).toString());
+                        setShowEditBalanceModal(true);
+                      }}
+                      className="text-gray-400 hover:text-green-600 p-1.5 rounded-md hover:bg-gray-50 transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-gray-100"
+                      title="Sesuaikan/Update Saldo"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* FITUR LIMIT BUDGET BULANAN */}
           <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
             <div className="flex justify-between items-center mb-3">
@@ -1253,7 +1412,12 @@ export default function DashboardPage() {
                   Batas Global
                 </button>
                 <button 
-                  onClick={() => setShowBudgetModal(true)}
+                  onClick={() => {
+                    setEditingBudgetId(null);
+                    setBudgetCategory("");
+                    setBudgetLimit("");
+                    setShowBudgetModal(true);
+                  }}
                   className="text-[10px] text-emerald-700 font-bold hover:underline cursor-pointer bg-emerald-50 py-1.5 px-2.5 rounded-lg border border-emerald-100"
                 >
                   + Kategori
@@ -1292,24 +1456,46 @@ export default function DashboardPage() {
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
                   <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Anggaran per Kategori</p>
                   {budgets.map(b => {
-                    const spent = categoryExpenses[b.category] || 0;
+                    const spent = categoryExpenses[getBudgetCategoryGroup(b.category)] || 0;
                     const pct = Math.min((spent / b.limit) * 100, 100);
                     return (
                       <div key={b._id} className="space-y-1.5 group">
-                        <div className="flex justify-between text-[11px] font-semibold">
+                        <div className="flex justify-between text-[11px] font-semibold items-center">
                           <span className="text-gray-700 flex items-center gap-1.5 font-bold">
                             {b.category}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-500 font-medium">
+                              Rp {spent.toLocaleString("id-ID")} / Rp {b.limit.toLocaleString("id-ID")}
+                            </span>
+                            
+                            {/* Edit Button */}
+                            <button
+                              onClick={() => {
+                                setEditingBudgetId(b._id);
+                                setBudgetCategory(b.category);
+                                setBudgetLimit(b.limit.toString());
+                                setShowBudgetModal(true);
+                              }}
+                              className="text-gray-400 hover:text-green-600 transition-all cursor-pointer p-0.5 rounded hover:bg-gray-50"
+                              title="Edit Limit Kategori"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                              </svg>
+                            </button>
+
+                            {/* Delete Button */}
                             <button
                               onClick={() => handleDeleteBudget(b._id)}
-                              className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[9px]"
+                              className="text-gray-400 hover:text-red-500 transition-all cursor-pointer p-0.5 rounded hover:bg-gray-50"
                               title="Hapus Limit Kategori"
                             >
-                              ✕
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                              </svg>
                             </button>
-                          </span>
-                          <span className="text-gray-500 font-medium">
-                            Rp {spent.toLocaleString("id-ID")} / Rp {b.limit.toLocaleString("id-ID")}
-                          </span>
+                          </div>
                         </div>
                         <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
                           <div
@@ -1325,6 +1511,11 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* RIWAYAT MUTASI (MOBILE ONLY) */}
+          <div className="block md:hidden">
+            {renderTransactionHistory("h-[400px]")}
           </div>
 
           {/* CHART HISTORY KEUANGAN */}
@@ -1620,311 +1811,222 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+        </div>
 
-          {/* LIST DOMPET / BANK */}
-          <div>
-            <h3 className="font-bold text-gray-900 mb-3 text-sm">Dompet & Rekening Berjalan ({accounts.length})</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {accounts.map((acc) => (
-                <div key={acc._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center group hover:border-green-200 transition-all">
-                  <div>
-                    <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold ${
-                      acc.type === "BANK" ? "bg-blue-50 text-blue-600" :
-                      acc.type === "INVESTMENT" ? "bg-purple-50 text-purple-600" : "bg-amber-50 text-amber-600"
-                    }`}>
-                      {acc.type}
-                    </span>
-                    <h4 className="font-bold text-gray-900 mt-1 text-sm">{acc.name}</h4>
-                    {acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0 ? (
-                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1 bg-red-50/50 px-2 py-0.5 rounded-md w-fit">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-red-400 animate-pulse">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clipRule="evenodd" />
-                        </svg>
-                        Bunga: Rp {acc.monthlyInterest.toLocaleString("id-ID")}/bln
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="text-right flex items-center gap-2">
-                    <p className="font-extrabold text-sm text-gray-900">Rp {acc.balance.toLocaleString("id-ID")}</p>
-                    <button 
-                      onClick={() => {
-                        setSelectedAccId(acc._id);
-                        setSelectedAccName(acc.name);
-                        setSelectedAccType(acc.type);
-                        setNewBalanceValue(acc.balance.toString());
-                        setNewInterestValue((acc.monthlyInterest || 0).toString());
-                        setShowEditBalanceModal(true);
-                      }}
-                      className="text-gray-400 hover:text-green-600 p-1.5 rounded-md hover:bg-gray-50 transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-gray-100"
-                      title="Sesuaikan/Update Saldo"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                      </svg>
-                    </button>
-                  </div>
+        {/* RIGHT COLUMN: Riwayat Transaksi (Desktop), Tagihan, Target Tabungan */}
+        <div className="md:col-span-1 space-y-6 flex flex-col">
+          
+          {/* RIWAYAT MUTASI (DESKTOP ONLY) */}
+          <div className="hidden md:block">
+            {renderTransactionHistory("h-[550px]")}
+          </div>
+
+          {/* TAGIHAN & LANGGANAN */}
+          <div className="w-full">
+            {bills.length === 0 ? (
+              <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center text-xs">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-gray-400">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.03 0 1.9.693 2.166 1.638m-7.377 19.462A9 9 0 1121.75 12a9 9 0 01-9 9z" />
+                  </svg>
+                  <span className="font-semibold text-gray-400">Belum ada tagihan</span>
                 </div>
-              ))}
-            </div>
+                <button
+                  onClick={() => {
+                    if(accounts.length > 0) setShowBillModal(true);
+                    else alert("Tambahkan rekening bank terlebih dahulu!");
+                  }}
+                  className="text-[10px] text-green-600 font-extrabold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
+                >
+                  + Tagihan
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col">
+                <div className="flex justify-between items-center mb-3">
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                      Tagihan & Langganan
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Pantau pengeluaran bulanan rutin Anda ({bills.length})</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if(accounts.length > 0) setShowBillModal(true);
+                      else alert("Tambahkan rekening bank terlebih dahulu!");
+                    }}
+                    className="text-[10px] text-green-600 font-bold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
+                  >
+                    + Tagihan
+                  </button>
+                </div>
+
+                <div className="space-y-3 overflow-y-auto max-h-[260px] pr-1">
+                  {bills.map((bill) => {
+                    const linkedAccount = accounts.find(a => a._id === bill.accountId);
+                    const today = new Date();
+                    const currentDay = today.getDate();
+                    const daysLeft = bill.dueDate - currentDay;
+                    const isUrgent = bill.status === "UNPAID" && daysLeft >= 0 && daysLeft <= 3;
+
+                    return (
+                      <div 
+                        key={bill._id} 
+                        className={`p-3 rounded-2xl border transition-all flex flex-col gap-2 relative group ${
+                          bill.status === "PAID" 
+                            ? "bg-gray-50/50 border-gray-100 opacity-70" 
+                            : isUrgent 
+                              ? "bg-red-50/50 border-red-200 animate-pulse" 
+                              : "bg-white border-gray-100 hover:border-green-200"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-gray-900 text-xs">{bill.name}</span>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                bill.status === "PAID" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+                              }`}>
+                                {bill.status === "PAID" ? "Lunas" : "Belum Bayar"}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-0.5">{bill.category} • Rekening: {linkedAccount?.name || "-"}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-extrabold text-xs text-gray-900">Rp {bill.amount.toLocaleString("id-ID")}</p>
+                            <p className={`text-[10px] mt-0.5 font-bold ${
+                              bill.status === "PAID" 
+                                ? "text-gray-400" 
+                                : isUrgent 
+                                  ? "text-red-500" 
+                                  : "text-gray-500"
+                            }`}>
+                              Jatuh Tempo: Tgl {bill.dueDate}
+                              {bill.status === "UNPAID" && (
+                                daysLeft === 0 ? " (Hari Ini)" : daysLeft > 0 ? ` (${daysLeft} hari lagi)` : " (Lewat Tempo)"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1.5 border-t border-gray-100/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleDeleteBill(bill._id)}
+                            className="text-[10px] text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                          {bill.status === "UNPAID" && (
+                            <button
+                              onClick={() => handlePayBill(bill._id)}
+                              className="text-[10px] bg-green-600 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-bold transition-all shadow-sm cursor-pointer"
+                            >
+                              Bayar Sekarang
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* TARGET TABUNGAN (SAVINGS GOALS) */}
-          <div className="mt-6">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-                Target Tabungan & Mimpi ({savings.length})
-              </h3>
-              <button
-                onClick={() => setShowSavingsModal(true)}
-                className="text-[10px] text-green-600 font-bold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
-              >
-                + Target Baru
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {savings.map((goal) => {
-                const pct = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
-                
-                // Helper to estimate
-                const getGoalEstimation = (g: SavingsGoalType) => {
-                  if (g.currentAmount >= g.targetAmount) return "Tercapai! 🎉";
-                  const remaining = g.targetAmount - g.currentAmount;
-                  
-                  if (g.monthlyContribution && g.monthlyContribution > 0) {
-                    const months = Math.ceil(remaining / g.monthlyContribution);
-                    return `Estimasi: ${months} bulan lagi (Rp ${g.monthlyContribution.toLocaleString("id-ID")}/bln)`;
-                  }
-
-                  // Default velocity based on savings rate or default 250k
-                  const defaultAllocatedRate = 250000;
-                  const months = Math.ceil(remaining / defaultAllocatedRate);
-                  return `Estimasi: ${months} bln (berdasarkan tren Rp 250rb/bln)`;
-                };
-
-                return (
-                  <div key={goal._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between group hover:border-green-200 transition-all">
-                    <div>
-                      <div className="flex justify-between items-start gap-1">
-                        <h4 className="font-extrabold text-gray-900 text-sm leading-snug">{goal.name}</h4>
-                        <button
-                          onClick={() => handleDeleteSavingsGoal(goal._id)}
-                          className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-xs p-0.5"
-                          title="Hapus Target"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      
-                      <div className="flex justify-between text-[11px] font-bold text-gray-500 mt-2 mb-1">
-                        <span>Progress: {pct.toFixed(0)}%</span>
-                        <span className="text-gray-900 font-extrabold">
-                          Rp {goal.currentAmount.toLocaleString("id-ID")} / Rp {goal.targetAmount.toLocaleString("id-ID")}
-                        </span>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          style={{ width: `${pct}%` }}
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            pct >= 100 ? "bg-green-600" : pct >= 50 ? "bg-emerald-500" : "bg-amber-500"
-                          }`}
-                        />
-                      </div>
-
-                      <p className="text-[10px] text-gray-400 mt-2 font-medium">
-                        {getGoalEstimation(goal)}
-                      </p>
-                    </div>
-
-                    <div className="mt-3 pt-3 border-t border-gray-50 flex justify-end">
-                      <button
-                        onClick={() => {
-                          setSelectedSavingId(goal._id);
-                          setAddFundsValue("");
-                          setShowAddFundsModal(true);
-                        }}
-                        className="text-[10px] font-bold text-green-600 bg-green-50 hover:bg-green-100 py-1 px-2.5 rounded-lg border border-green-100 transition-all cursor-pointer"
-                      >
-                        + Tabung Uang
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {savings.length === 0 && (
-                <div className="sm:col-span-2 text-center py-6 text-xs text-gray-400 italic bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
-                  Belum ada target tabungan dibuat. Mulai impianmu sekarang!
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* AREA KANAN: TRACKER TAGIHAN & HISTORY MUTASI */}
-        <div className="space-y-6">
-          
-          {/* SUBSCRIPTION & BILL TRACKER */}
-          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col">
-            <div className="flex justify-between items-center mb-3">
-              <div>
+          <div className="w-full">
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col">
+              <div className="flex justify-between items-center mb-3">
                 <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-                  Tagihan & Langganan
+                  Target Tabungan & Mimpi ({savings.length})
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">Pantau pengeluaran bulanan rutin Anda ({bills.length})</p>
+                <button
+                  onClick={() => setShowSavingsModal(true)}
+                  className="text-[10px] text-green-600 font-bold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
+                >
+                  + Target Baru
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  if(accounts.length > 0) setShowBillModal(true);
-                  else alert("Tambahkan rekening bank terlebih dahulu!");
-                }}
-                className="text-[10px] text-green-600 font-bold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
-              >
-                + Tagihan
-              </button>
-            </div>
+              
+              <div className="space-y-4">
+                {savings.map((goal) => {
+                  const pct = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+                  
+                  // Helper to estimate
+                  const getGoalEstimation = (g: SavingsGoalType) => {
+                    if (g.currentAmount >= g.targetAmount) return "Tercapai! 🎉";
+                    const remaining = g.targetAmount - g.currentAmount;
+                    
+                    if (g.monthlyContribution && g.monthlyContribution > 0) {
+                      const months = Math.ceil(remaining / g.monthlyContribution);
+                      return `Estimasi: ${months} bulan lagi (Rp ${g.monthlyContribution.toLocaleString("id-ID")}/bln)`;
+                    }
 
-            <div className="space-y-3 overflow-y-auto max-h-[260px] pr-1">
-              {bills.map((bill) => {
-                const linkedAccount = accounts.find(a => a._id === bill.accountId);
-                const today = new Date();
-                const currentDay = today.getDate();
-                const daysLeft = bill.dueDate - currentDay;
+                    const defaultAllocatedRate = 250000;
+                    const months = Math.ceil(remaining / defaultAllocatedRate);
+                    return `Estimasi: ${months} bln (berdasarkan tren Rp 250rb/bln)`;
+                  };
 
-                // Tentukan level urgensi tenggat waktu
-                const isUrgent = bill.status === "UNPAID" && daysLeft >= 0 && daysLeft <= 3;
-
-                return (
-                  <div 
-                    key={bill._id} 
-                    className={`p-3 rounded-2xl border transition-all flex flex-col gap-2 relative group ${
-                      bill.status === "PAID" 
-                        ? "bg-gray-50/50 border-gray-100 opacity-70" 
-                        : isUrgent 
-                          ? "bg-red-50/50 border-red-200 animate-pulse" 
-                          : "bg-white border-gray-100 hover:border-green-200"
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
+                  return (
+                    <div key={goal._id} className="p-3.5 rounded-2xl border border-gray-150 bg-gray-50/25 flex flex-col justify-between group hover:border-green-200 transition-all">
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-gray-900 text-xs">{bill.name}</span>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                            bill.status === "PAID" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
-                          }`}>
-                            {bill.status === "PAID" ? "Lunas" : "Belum Bayar"}
+                        <div className="flex justify-between items-start gap-1">
+                          <h4 className="font-extrabold text-gray-900 text-sm leading-snug">{goal.name}</h4>
+                          <button
+                            onClick={() => handleDeleteSavingsGoal(goal._id)}
+                            className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-xs p-0.5"
+                            title="Hapus Target"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        
+                        <div className="flex justify-between text-[11px] font-bold text-gray-500 mt-2 mb-1">
+                          <span>Progress: {pct.toFixed(0)}%</span>
+                          <span className="text-gray-900 font-extrabold text-[11px]">
+                            Rp {goal.currentAmount.toLocaleString("id-ID")}
                           </span>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{bill.category} • Rekening: {linkedAccount?.name || "-"}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-extrabold text-xs text-gray-900">Rp {bill.amount.toLocaleString("id-ID")}</p>
-                        <p className={`text-[10px] mt-0.5 font-bold ${
-                          bill.status === "PAID" 
-                            ? "text-gray-400" 
-                            : isUrgent 
-                              ? "text-red-500" 
-                              : "text-gray-500"
-                        }`}>
-                          Jatuh Tempo: Tgl {bill.dueDate}
-                          {bill.status === "UNPAID" && (
-                            daysLeft === 0 ? " (Hari Ini)" : daysLeft > 0 ? ` (${daysLeft} hari lagi)` : " (Lewat Tempo)"
-                          )}
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="flex justify-end gap-2 pt-1.5 border-t border-gray-100/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handleDeleteBill(bill._id)}
-                        className="text-[10px] text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer"
-                      >
-                        Hapus
-                      </button>
-                      {bill.status === "UNPAID" && (
-                        <button
-                          onClick={() => handlePayBill(bill._id)}
-                          className="text-[10px] bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-bold transition-all shadow-sm cursor-pointer"
-                        >
-                          Bayar Sekarang
-                        </button>
-                      )}
+                        {/* Progress Bar */}
+                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            style={{ width: `${pct}%` }}
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              pct >= 100 ? "bg-green-600" : pct >= 50 ? "bg-emerald-500" : "bg-amber-500"
+                            }`}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center mt-2.5">
+                          <p className="text-[9px] text-gray-400 font-medium">
+                            {getGoalEstimation(goal)}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setSelectedSavingId(goal._id);
+                              setAddFundsValue("");
+                              setShowAddFundsModal(true);
+                            }}
+                            className="text-[9px] font-bold text-green-600 bg-green-50 hover:bg-green-100 py-1 px-2 rounded-lg border border-green-100 transition-all cursor-pointer"
+                          >
+                            + Tabung
+                          </button>
+                        </div>
+                      </div>
                     </div>
+                  );
+                })}
+                {savings.length === 0 && (
+                  <div className="text-center py-6 text-xs text-gray-400 italic bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                    Belum ada target tabungan dibuat.
                   </div>
-                );
-              })}
-              {bills.length === 0 && (
-                <div className="text-center py-8 text-xs text-gray-400 italic">
-                  Belum ada tagihan berulang terdaftar.
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-
-          {/* RIWAYAT MUTASI */}
-          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col h-[400px]">
-            <h3 className="font-bold text-gray-900 mb-2 text-sm">Riwayat Transaksi</h3>
-            
-            {/* BADGES */}
-            <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
-              {["ALL", "BANK", "CASH", "INVESTMENT"].map((b) => (
-                <button 
-                  key={b} 
-                  onClick={() => setFilterType(b)}
-                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all ${
-                    filterType === b ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  } cursor-pointer`}
-                >
-                  {b === "ALL" ? "Semua" : b}
-                </button>
-              ))}
-            </div>
-
-            {/* SCROLLABLE LIST MUTASI */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {filteredTransactions.map((tx) => {
-                const linkedAccount = accounts.find(a => a._id === tx.accountId);
-                return (
-                  <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50/50 pb-2 hover:translate-x-1 hover:bg-gray-50/60 hover:shadow-[0_2px_8px_rgba(0,0,0,0.01)] rounded-xl p-2 transition-all duration-200 group">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        tx.type === "INCOME" ? "bg-green-500" : "bg-red-500"
-                      }`} />
-                      <div>
-                        <h5 className="font-bold text-gray-950 leading-tight">
-                          {tx.category}{" "}
-                          <span className="text-[9px] font-medium text-gray-400">
-                            ({linkedAccount ? linkedAccount.name : "Aset"})
-                          </span>
-                        </h5>
-                        <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[140px]">
-                          {tx.description || "-"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : "text-red-500"}`}>
-                        {tx.type === "INCOME" ? "+" : "-"} Rp {tx.amount.toLocaleString("id-ID")}
-                      </p>
-                      <button
-                        onClick={() => handleDeleteTransaction(tx._id)}
-                        className="text-gray-300 hover:text-red-500 p-1.5 rounded transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-                        title="Hapus Transaksi"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {filteredTransactions.length === 0 && <p className="text-center text-xs text-gray-400 italic pt-16">Tidak ditemukan catatan keuangan.</p>}
-            </div>
-          </div>
-
         </div>
+
       </div>
 
       {/* MODAL: CONFIG ANGGARAN LIMIT BULANAN */}
@@ -2104,7 +2206,18 @@ export default function DashboardPage() {
                 <label className="block mb-1 font-semibold text-gray-600">
                   {txType === "TRANSFER" ? "Rekening Asal" : "Pilih Rekening"}
                 </label>
-                <select value={txAccount} onChange={e => setTxAccount(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
+                <select 
+                  value={txAccount} 
+                  onChange={e => {
+                    const val = e.target.value;
+                    setTxAccount(val);
+                    if (val === txToAccount) {
+                      const other = accounts.find(a => a._id !== val);
+                      if (other) setTxToAccount(other._id);
+                    }
+                  }} 
+                  className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold"
+                >
                   {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
                 </select>
               </div>
@@ -2136,7 +2249,16 @@ export default function DashboardPage() {
               {txType !== "TRANSFER" && (
                 <div>
                   <label className="block mb-1 font-semibold text-gray-600">Kategori</label>
-                  <input required type="text" placeholder="Contoh: Dividen BBRI, Bensin, Makan Siang" value={txCategory} onChange={e => setTxCategory(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+                  <input required type="text" placeholder="Contoh: Dividen BBRI, Bensin, Makan Siang" value={txCategory} onChange={e => setTxCategory(e.target.value)} list="tx-category-options" className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+                  <datalist id="tx-category-options">
+                    <option value="Makanan & Minuman" />
+                    <option value="Transportasi" />
+                    <option value="Belanja & Harian" />
+                    <option value="Tagihan & Pulsa" />
+                    <option value="Kesehatan" />
+                    <option value="Hiburan & Rekreasi" />
+                    <option value="Lainnya" />
+                  </datalist>
                 </div>
               )}
 
@@ -2225,7 +2347,7 @@ export default function DashboardPage() {
                   {/* Photo Preview with Scanning Animation */}
                   <div className="relative border border-gray-100 rounded-2xl overflow-hidden aspect-video bg-gray-50 flex items-center justify-center max-h-[220px]">
                     <img 
-                      src={ocrImageSrc} 
+                      src={ocrImageSrc || undefined} 
                       alt="Preview Struk" 
                       className="max-h-full max-w-full object-contain"
                     />
@@ -2376,7 +2498,7 @@ export default function DashboardPage() {
       {showBudgetModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
           <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl animate-in fade-in duration-200">
-            <h3 className="font-bold text-base mb-2">Limit Kategori</h3>
+            <h3 className="font-bold text-base mb-2">{editingBudgetId ? "Edit Limit Kategori" : "Limit Kategori"}</h3>
             <p className="text-xs text-gray-400 mb-4">Batasi anggaran belanja untuk kategori spesifik agar keuangan tetap sehat.</p>
             <form onSubmit={handleAddBudget} className="space-y-3 text-xs">
               <div>
@@ -2389,6 +2511,7 @@ export default function DashboardPage() {
                   <option value="Belanja" />
                   <option value="Kesehatan" />
                   <option value="Tagihan" />
+                  <option value="Lainnya" />
                 </datalist>
               </div>
               <div>
@@ -2396,8 +2519,8 @@ export default function DashboardPage() {
                 <input required type="number" placeholder="Nominal Rp" value={budgetLimit} onChange={e => setBudgetLimit(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold focus:outline-none focus:border-green-500 text-black" />
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowBudgetModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
-                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Simpan Anggaran</button>
+                <button type="button" onClick={() => { setShowBudgetModal(false); setEditingBudgetId(null); }} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">{editingBudgetId ? "Simpan Perubahan" : "Simpan Anggaran"}</button>
               </div>
             </form>
           </div>
