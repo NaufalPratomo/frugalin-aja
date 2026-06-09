@@ -17,7 +17,8 @@ interface AccountType {
 interface TransactionType {
   _id: string;
   accountId: string;
-  type: 'INCOME' | 'EXPENSE';
+  toAccountId?: string;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   amount: number;
   category: string;
   description: string;
@@ -33,6 +34,21 @@ interface BillType {
   accountId: string;
   status: 'UNPAID' | 'PAID';
   lastPaidDate?: string;
+}
+
+interface BudgetType {
+  _id: string;
+  category: string;
+  limit: number;
+}
+
+interface SavingsGoalType {
+  _id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate?: string;
+  monthlyContribution?: number;
 }
 
 
@@ -226,6 +242,26 @@ export default function DashboardPage() {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [showBalance, setShowBalance] = useState(false);
 
+  // Budgets state
+  const [budgets, setBudgets] = useState<BudgetType[]>([]);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [budgetCategory, setBudgetCategory] = useState("");
+  const [budgetLimit, setBudgetLimit] = useState("");
+
+  // Savings Goals state
+  const [savings, setSavings] = useState<SavingsGoalType[]>([]);
+  const [showSavingsModal, setShowSavingsModal] = useState(false);
+  const [savingName, setSavingName] = useState("");
+  const [savingTarget, setSavingTarget] = useState("");
+  const [savingCurrent, setSavingCurrent] = useState("");
+  const [savingDate, setSavingDate] = useState("");
+  const [savingMonthly, setSavingMonthly] = useState("");
+
+  // Add Funds to Savings state
+  const [showAddFundsModal, setShowAddFundsModal] = useState(false);
+  const [selectedSavingId, setSelectedSavingId] = useState("");
+  const [addFundsValue, setAddFundsValue] = useState("");
+
   // Modals state
   const [showAccModal, setShowAccModal] = useState(false);
   const [showTxModal, setShowTxModal] = useState(false);
@@ -241,8 +277,6 @@ export default function DashboardPage() {
   const [billCategory, setBillCategory] = useState("Tagihan & Pulsa");
   const [billDueDate, setBillDueDate] = useState("1");
   const [billAccount, setBillAccount] = useState("");
-
-
 
   // OCR Scan states
   const [isScanning, setIsScanning] = useState(false);
@@ -262,6 +296,7 @@ export default function DashboardPage() {
   const [accInterest, setAccInterest] = useState("");
   
   const [txAccount, setTxAccount] = useState("");
+  const [txToAccount, setTxToAccount] = useState(""); // Rekening tujuan transfer
   const [txType, setTxType] = useState("EXPENSE");
   const [txAmount, setTxAmount] = useState("");
   const [txCategory, setTxCategory] = useState("Makanan");
@@ -292,6 +327,11 @@ export default function DashboardPage() {
         setAccounts(dataAcc);
         if (dataAcc.length > 0) {
           if (!txAccount) setTxAccount(dataAcc[0]._id);
+          if (dataAcc.length > 1) {
+            if (!txToAccount) setTxToAccount(dataAcc[1]._id);
+          } else {
+            if (!txToAccount) setTxToAccount(dataAcc[0]._id);
+          }
           if (!ocrAccount) setOcrAccount(dataAcc[0]._id);
           if (!billAccount) setBillAccount(dataAcc[0]._id);
         }
@@ -319,6 +359,16 @@ export default function DashboardPage() {
       const resBills = await fetch("/api/bills");
       const dataBills = await resBills.json();
       if (Array.isArray(dataBills)) setBills(dataBills);
+
+      // Ambil data anggaran per kategori
+      const resBudgets = await fetch("/api/budgets");
+      const dataBudgets = await resBudgets.json();
+      if (Array.isArray(dataBudgets)) setBudgets(dataBudgets);
+
+      // Ambil data target tabungan
+      const resSavings = await fetch("/api/savings");
+      const dataSavings = await resSavings.json();
+      if (Array.isArray(dataSavings)) setSavings(dataSavings);
     } catch (e) {
       console.error("Gagal sinkronisasi data keuangan", e);
       showToast("Gagal menyelaraskan data keuangan dari server.", "error");
@@ -466,28 +516,153 @@ export default function DashboardPage() {
     e.preventDefault();
     showToast("Mencatat transaksi keuangan...", "info");
     try {
+      const isTransfer = txType === "TRANSFER";
+      const payload = {
+        accountId: txAccount,
+        toAccountId: isTransfer ? txToAccount : undefined,
+        type: txType,
+        amount: Number(txAmount),
+        category: isTransfer ? "Transfer" : txCategory,
+        description: txDesc
+      };
+      
       const res = await fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountId: txAccount,
-          type: txType,
-          amount: Number(txAmount),
-          category: txCategory,
-          description: txDesc
-        })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
-        showToast("Transaksi keuangan berhasil dicatat!", "success");
+        showToast(isTransfer ? "Dana berhasil ditransfer!" : "Transaksi keuangan berhasil dicatat!", "success");
         setShowTxModal(false);
         setTxAmount("");
         setTxDesc("");
         fetchData();
       } else {
-        showToast("Gagal mencatat transaksi.", "error");
+        const errorData = await res.json();
+        showToast(errorData.message || "Gagal mencatat transaksi.", "error");
       }
     } catch (err) {
       showToast("Kesalahan saat mencatat transaksi.", "error");
+    }
+  };
+
+  const handleAddBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    showToast("Menyimpan batas anggaran kategori...", "info");
+    try {
+      const res = await fetch("/api/budgets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: budgetCategory,
+          limit: Number(budgetLimit)
+        })
+      });
+      if (res.ok) {
+        showToast(`Batas anggaran kategori "${budgetCategory}" disimpan!`, "success");
+        setShowBudgetModal(false);
+        setBudgetCategory("");
+        setBudgetLimit("");
+        fetchData();
+      } else {
+        showToast("Gagal menyimpan anggaran.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menyimpan anggaran.", "error");
+    }
+  };
+
+  const handleDeleteBudget = async (id: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus anggaran kategori ini?")) return;
+    showToast("Menghapus anggaran...", "info");
+    try {
+      const res = await fetch(`/api/budgets?id=${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        showToast("Anggaran kategori berhasil dihapus!", "success");
+        fetchData();
+      } else {
+        showToast("Gagal menghapus anggaran.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghapus anggaran.", "error");
+    }
+  };
+
+  const handleAddSavingsGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    showToast("Membuat target tabungan baru...", "info");
+    try {
+      const res = await fetch("/api/savings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: savingName,
+          targetAmount: Number(savingTarget),
+          currentAmount: Number(savingCurrent || 0),
+          targetDate: savingDate || undefined,
+          monthlyContribution: Number(savingMonthly || 0)
+        })
+      });
+      if (res.ok) {
+        showToast(`Target tabungan "${savingName}" berhasil dibuat!`, "success");
+        setShowSavingsModal(false);
+        setSavingName("");
+        setSavingTarget("");
+        setSavingCurrent("");
+        setSavingDate("");
+        setSavingMonthly("");
+        fetchData();
+      } else {
+        showToast("Gagal membuat target tabungan.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat membuat target tabungan.", "error");
+    }
+  };
+
+  const handleDeleteSavingsGoal = async (id: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus target tabungan ini?")) return;
+    showToast("Menghapus target...", "info");
+    try {
+      const res = await fetch(`/api/savings/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        showToast("Target tabungan berhasil dihapus!", "success");
+        fetchData();
+      } else {
+        showToast("Gagal menghapus target tabungan.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menghapus target tabungan.", "error");
+    }
+  };
+
+  const handleAddSavingsFunds = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addFundsValue) return;
+    showToast("Menambahkan dana tabungan...", "info");
+    try {
+      const res = await fetch(`/api/savings/${selectedSavingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ADD_FUNDS",
+          addAmount: Number(addFundsValue)
+        })
+      });
+      if (res.ok) {
+        showToast("Dana berhasil ditambahkan ke tabungan!", "success");
+        setShowAddFundsModal(false);
+        setAddFundsValue("");
+        fetchData();
+      } else {
+        showToast("Gagal menambahkan dana tabungan.", "error");
+      }
+    } catch (err) {
+      showToast("Kesalahan saat menambahkan dana.", "error");
     }
   };
 
@@ -750,6 +925,11 @@ export default function DashboardPage() {
               runningBalances[tx.accountId] -= tx.amount;
             } else if (tx.type === "EXPENSE") {
               runningBalances[tx.accountId] += tx.amount;
+            } else if (tx.type === "TRANSFER") {
+              runningBalances[tx.accountId] += tx.amount;
+              if (tx.toAccountId && runningBalances[tx.toAccountId] !== undefined) {
+                runningBalances[tx.toAccountId] -= tx.amount;
+              }
             }
           }
           txIndex++;
@@ -768,6 +948,99 @@ export default function DashboardPage() {
     if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}Jt`;
     if (value >= 1_000) return `Rp ${(value / 1_000).toFixed(0)}Rb`;
     return `Rp ${value}`;
+  };
+
+  // Hitung pengeluaran per kategori bulan ini
+  const categoryExpenses: Record<string, number> = {};
+  transactions.forEach(tx => {
+    if (tx.type === "EXPENSE") {
+      const txDate = new Date(tx.date);
+      if (txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear) {
+        categoryExpenses[tx.category] = (categoryExpenses[tx.category] || 0) + tx.amount;
+      }
+    }
+  });
+
+  // DYNAMIC INSIGHTS GENERATION
+  const getDynamicInsights = () => {
+    const insights: string[] = [];
+    const now = new Date();
+    const curMonth = now.getMonth();
+    const curYear = now.getFullYear();
+
+    const lastMonth = curMonth === 0 ? 11 : curMonth - 1;
+    const lastMonthYear = curMonth === 0 ? curYear - 1 : curYear;
+
+    const categoryTotalsCur: Record<string, number> = {};
+    const categoryTotalsLast: Record<string, number> = {};
+
+    transactions.forEach(tx => {
+      if (tx.type !== "EXPENSE") return;
+      const txDate = new Date(tx.date);
+      const m = txDate.getMonth();
+      const y = txDate.getFullYear();
+      const cat = tx.category;
+
+      if (m === curMonth && y === curYear) {
+        categoryTotalsCur[cat] = (categoryTotalsCur[cat] || 0) + tx.amount;
+      } else if (m === lastMonth && y === lastMonthYear) {
+        categoryTotalsLast[cat] = (categoryTotalsLast[cat] || 0) + tx.amount;
+      }
+    });
+
+    let maxIncreaseCat = "";
+    let maxIncreasePct = 0;
+    Object.keys(categoryTotalsCur).forEach(cat => {
+      const curAmt = categoryTotalsCur[cat];
+      const lastAmt = categoryTotalsLast[cat] || 0;
+      if (lastAmt > 10000) {
+        const pct = ((curAmt - lastAmt) / lastAmt) * 100;
+        if (pct > maxIncreasePct) {
+          maxIncreasePct = pct;
+          maxIncreaseCat = cat;
+        }
+      }
+    });
+
+    if (maxIncreaseCat && maxIncreasePct > 5) {
+      insights.push(`Pengeluaran untuk "${maxIncreaseCat}" naik ${maxIncreasePct.toFixed(0)}% dari bulan lalu.`);
+    }
+
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const weeklyExpenses = transactions
+      .filter(tx => tx.type === "EXPENSE" && new Date(tx.date) >= oneWeekAgo)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 3);
+
+    if (weeklyExpenses.length > 0) {
+      const formattedTxs = weeklyExpenses.map(tx => `Rp ${tx.amount.toLocaleString("id-ID")} (${tx.category})`).join(", ");
+      insights.push(`3 transaksi terbesar minggu ini: ${formattedTxs}.`);
+    }
+
+    let topCat = "";
+    let topCatAmt = 0;
+    let totalCurMonthExp = 0;
+    Object.keys(categoryTotalsCur).forEach(cat => {
+      const amt = categoryTotalsCur[cat];
+      totalCurMonthExp += amt;
+      if (amt > topCatAmt) {
+        topCatAmt = amt;
+        topCat = cat;
+      }
+    });
+
+    if (topCat && totalCurMonthExp > 0) {
+      const topCatPct = (topCatAmt / totalCurMonthExp) * 100;
+      insights.push(`Kategori "${topCat}" menyumbang ${topCatPct.toFixed(0)}% dari total pengeluaran bulan ini.`);
+    }
+
+    if (insights.length === 0) {
+      insights.push("Luar biasa! Belum ada lonjakan pengeluaran atau transaksi mencurigakan minggu ini.");
+      insights.push("Tips: Tetapkan limit anggaran per kategori untuk mengontrol pengeluaran dengan lebih presisi.");
+    }
+
+    return insights;
   };
 
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
@@ -972,12 +1245,20 @@ export default function DashboardPage() {
                 <h3 className="font-bold text-gray-900 text-sm">Limit Anggaran Bulanan</h3>
                 <p className="text-xs text-gray-400 mt-0.5">Kontrol akumulasi pengeluaran harianmu</p>
               </div>
-              <button 
-                onClick={() => setShowLimitModal(true)}
-                className="text-[11px] text-green-600 font-bold hover:underline cursor-pointer bg-green-50 py-1.5 px-3 rounded-lg"
-              >
-                Set Limit
-              </button>
+              <div className="flex gap-1.5">
+                <button 
+                  onClick={() => setShowLimitModal(true)}
+                  className="text-[10px] text-green-600 font-bold hover:underline cursor-pointer bg-green-50 py-1.5 px-2.5 rounded-lg border border-green-100"
+                >
+                  Batas Global
+                </button>
+                <button 
+                  onClick={() => setShowBudgetModal(true)}
+                  className="text-[10px] text-emerald-700 font-bold hover:underline cursor-pointer bg-emerald-50 py-1.5 px-2.5 rounded-lg border border-emerald-100"
+                >
+                  + Kategori
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1004,6 +1285,44 @@ export default function DashboardPage() {
                 <p className="text-[10px] text-red-500 font-bold tracking-wide animate-pulse mt-1">
                   Peringatan: Pengeluaran bulan ini sudah mencapai {limitPercentage.toFixed(0)}% dari batas limit anggaran!
                 </p>
+              )}
+
+              {/* Category Budgets */}
+              {budgets.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                  <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Anggaran per Kategori</p>
+                  {budgets.map(b => {
+                    const spent = categoryExpenses[b.category] || 0;
+                    const pct = Math.min((spent / b.limit) * 100, 100);
+                    return (
+                      <div key={b._id} className="space-y-1.5 group">
+                        <div className="flex justify-between text-[11px] font-semibold">
+                          <span className="text-gray-700 flex items-center gap-1.5 font-bold">
+                            {b.category}
+                            <button
+                              onClick={() => handleDeleteBudget(b._id)}
+                              className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[9px]"
+                              title="Hapus Limit Kategori"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                          <span className="text-gray-500 font-medium">
+                            Rp {spent.toLocaleString("id-ID")} / Rp {b.limit.toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                          <div
+                            style={{ width: `${pct}%` }}
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              pct >= 95 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-600"
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
@@ -1285,6 +1604,21 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+
+            {/* Dynamic Insights Panel */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <h4 className="font-bold text-gray-800 text-xs flex items-center gap-1.5 mb-2.5">
+                <span>Wawasan Keuangan Otomatis</span>
+              </h4>
+              <div className="space-y-2">
+                {getDynamicInsights().map((insight, idx) => (
+                  <div key={idx} className="bg-emerald-50/45 border border-emerald-100/50 rounded-xl p-3 flex gap-2.5 items-start text-xs text-emerald-950 font-semibold leading-relaxed">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 mt-1.5 flex-shrink-0" />
+                    <span>{insight}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* LIST DOMPET / BANK */}
@@ -1331,6 +1665,99 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* TARGET TABUNGAN (SAVINGS GOALS) */}
+          <div className="mt-6">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                Target Tabungan & Mimpi ({savings.length})
+              </h3>
+              <button
+                onClick={() => setShowSavingsModal(true)}
+                className="text-[10px] text-green-600 font-bold bg-green-50 hover:bg-green-100 py-1.5 px-3 rounded-lg border border-green-100 cursor-pointer"
+              >
+                + Target Baru
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {savings.map((goal) => {
+                const pct = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+                
+                // Helper to estimate
+                const getGoalEstimation = (g: SavingsGoalType) => {
+                  if (g.currentAmount >= g.targetAmount) return "Tercapai! 🎉";
+                  const remaining = g.targetAmount - g.currentAmount;
+                  
+                  if (g.monthlyContribution && g.monthlyContribution > 0) {
+                    const months = Math.ceil(remaining / g.monthlyContribution);
+                    return `Estimasi: ${months} bulan lagi (Rp ${g.monthlyContribution.toLocaleString("id-ID")}/bln)`;
+                  }
+
+                  // Default velocity based on savings rate or default 250k
+                  const defaultAllocatedRate = 250000;
+                  const months = Math.ceil(remaining / defaultAllocatedRate);
+                  return `Estimasi: ${months} bln (berdasarkan tren Rp 250rb/bln)`;
+                };
+
+                return (
+                  <div key={goal._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between group hover:border-green-200 transition-all">
+                    <div>
+                      <div className="flex justify-between items-start gap-1">
+                        <h4 className="font-extrabold text-gray-900 text-sm leading-snug">{goal.name}</h4>
+                        <button
+                          onClick={() => handleDeleteSavingsGoal(goal._id)}
+                          className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-xs p-0.5"
+                          title="Hapus Target"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      
+                      <div className="flex justify-between text-[11px] font-bold text-gray-500 mt-2 mb-1">
+                        <span>Progress: {pct.toFixed(0)}%</span>
+                        <span className="text-gray-900 font-extrabold">
+                          Rp {goal.currentAmount.toLocaleString("id-ID")} / Rp {goal.targetAmount.toLocaleString("id-ID")}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          style={{ width: `${pct}%` }}
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            pct >= 100 ? "bg-green-600" : pct >= 50 ? "bg-emerald-500" : "bg-amber-500"
+                          }`}
+                        />
+                      </div>
+
+                      <p className="text-[10px] text-gray-400 mt-2 font-medium">
+                        {getGoalEstimation(goal)}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-gray-50 flex justify-end">
+                      <button
+                        onClick={() => {
+                          setSelectedSavingId(goal._id);
+                          setAddFundsValue("");
+                          setShowAddFundsModal(true);
+                        }}
+                        className="text-[10px] font-bold text-green-600 bg-green-50 hover:bg-green-100 py-1 px-2.5 rounded-lg border border-green-100 transition-all cursor-pointer"
+                      >
+                        + Tabung Uang
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {savings.length === 0 && (
+                <div className="sm:col-span-2 text-center py-6 text-xs text-gray-400 italic bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                  Belum ada target tabungan dibuat. Mulai impianmu sekarang!
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1674,33 +2101,52 @@ export default function DashboardPage() {
             </div>
             <form onSubmit={handleAddTransaction} className="space-y-3 text-xs">
               <div>
-                <label className="block mb-1 font-semibold text-gray-600">Pilih Rekening Tujuan</label>
-                <select value={txAccount} onChange={e => setTxAccount(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500">
-                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name}</option>)}
+                <label className="block mb-1 font-semibold text-gray-600">
+                  {txType === "TRANSFER" ? "Rekening Asal" : "Pilih Rekening"}
+                </label>
+                <select value={txAccount} onChange={e => setTxAccount(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
+                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
                 </select>
               </div>
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Jenis Aktivitas</label>
-                <select value={txType} onChange={e => setTxType(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500">
+                <select value={txType} onChange={e => { setTxType(e.target.value); if(e.target.value === "TRANSFER" && accounts.length > 1) { const other = accounts.find(a => a._id !== txAccount); if(other) setTxToAccount(other._id); } }} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-bold">
                   <option value="EXPENSE">PENGELUARAN (-)</option>
                   <option value="INCOME">PEMASUKAN (+)</option>
+                  <option value="TRANSFER">TRANSFER (PINDAH SALDO)</option>
                 </select>
               </div>
+
+              {txType === "TRANSFER" && (
+                <div className="animate-in slide-in-from-top-2 duration-200">
+                  <label className="block mb-1 font-semibold text-gray-600">Rekening Tujuan</label>
+                  <select value={txToAccount} onChange={e => setTxToAccount(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
+                    {accounts.filter(a => a._id !== txAccount).map(a => (
+                      <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Nominal (Rp)</label>
-                <input required type="number" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black" />
+                <input required type="number" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-extrabold text-sm" />
               </div>
-              <div>
-                <label className="block mb-1 font-semibold text-gray-600">Kategori</label>
-                <input required type="text" placeholder="Contoh: Dividen BBRI, Bensin, Makan Siang" value={txCategory} onChange={e => setTxCategory(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black" />
-              </div>
+
+              {txType !== "TRANSFER" && (
+                <div>
+                  <label className="block mb-1 font-semibold text-gray-600">Kategori</label>
+                  <input required type="text" placeholder="Contoh: Dividen BBRI, Bensin, Makan Siang" value={txCategory} onChange={e => setTxCategory(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+                </div>
+              )}
+
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Keterangan</label>
-                <input type="text" placeholder="Opsional" value={txDesc} onChange={e => setTxDesc(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black" />
+                <input type="text" placeholder="Opsional" value={txDesc} onChange={e => setTxDesc(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowTxModal(false)} className="flex-1 bg-gray-100 py-2 rounded-lg font-bold cursor-pointer">Batal</button>
-                <button type="submit" className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold cursor-pointer">Rekam Transaksi</button>
+                <button type="button" onClick={() => setShowTxModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Rekam Transaksi</button>
               </div>
             </form>
           </div>
@@ -1922,6 +2368,96 @@ export default function DashboardPage() {
                 </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIG ANGGARAN KATEGORI */}
+      {showBudgetModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl animate-in fade-in duration-200">
+            <h3 className="font-bold text-base mb-2">Limit Kategori</h3>
+            <p className="text-xs text-gray-400 mb-4">Batasi anggaran belanja untuk kategori spesifik agar keuangan tetap sehat.</p>
+            <form onSubmit={handleAddBudget} className="space-y-3 text-xs">
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Pilih / Tulis Kategori</label>
+                <input required type="text" placeholder="Contoh: Makanan, Transportasi, Hiburan" value={budgetCategory} onChange={e => setBudgetCategory(e.target.value)} list="category-options" className="w-full border p-2.5 rounded-lg text-xs font-semibold focus:outline-none focus:border-green-500 text-black" />
+                <datalist id="category-options">
+                  <option value="Makanan" />
+                  <option value="Transportasi" />
+                  <option value="Hiburan" />
+                  <option value="Belanja" />
+                  <option value="Kesehatan" />
+                  <option value="Tagihan" />
+                </datalist>
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Batas Anggaran Bulanan (Rp)</label>
+                <input required type="number" placeholder="Nominal Rp" value={budgetLimit} onChange={e => setBudgetLimit(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold focus:outline-none focus:border-green-500 text-black" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowBudgetModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Simpan Anggaran</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TAMBAH TARGET TABUNGAN */}
+      {showSavingsModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl animate-in fade-in duration-200">
+            <h3 className="font-bold text-base mb-2">Target Tabungan Baru</h3>
+            <p className="text-xs text-gray-400 mb-4">Buat target pencapaian mimpi finansialmu.</p>
+            <form onSubmit={handleAddSavingsGoal} className="space-y-3 text-xs">
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Nama Target Mimpi</label>
+                <input required type="text" placeholder="Contoh: Laptop Kerja, Dana Darurat, Liburan" value={savingName} onChange={e => setSavingName(e.target.value)} className="w-full border p-2.5 rounded-lg text-xs font-semibold focus:outline-none focus:border-green-500 text-black" />
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Nominal Target (Rp)</label>
+                <input required type="number" placeholder="Nominal target akhir" value={savingTarget} onChange={e => setSavingTarget(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold focus:outline-none focus:border-green-500 text-black" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block mb-1 font-semibold text-gray-600">Tabungan Awal (Rp)</label>
+                  <input type="number" placeholder="0" value={savingCurrent} onChange={e => setSavingCurrent(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black font-semibold" />
+                </div>
+                <div>
+                  <label className="block mb-1 font-semibold text-gray-600">Rencana Nabung / Bln (Rp)</label>
+                  <input type="number" placeholder="Opsional" value={savingMonthly} onChange={e => setSavingMonthly(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black font-semibold" />
+                </div>
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Target Tanggal Tercapai (Opsional)</label>
+                <input type="date" value={savingDate} onChange={e => setSavingDate(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-semibold" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowSavingsModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Simpan Target</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TAMBAH SALDO/DANA TABUNGAN */}
+      {showAddFundsModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center p-4 z-50">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-xs shadow-xl animate-in fade-in duration-200">
+            <h3 className="font-bold text-sm mb-1">Tabung Uang</h3>
+            <p className="text-[11px] text-gray-400 mb-4">Tambahkan dana ke tabungan impianmu.</p>
+            <form onSubmit={handleAddSavingsFunds} className="space-y-3 text-xs">
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Jumlah Dana Ditabung (Rp)</label>
+                <input required type="number" placeholder="0" value={addFundsValue} onChange={e => setAddFundsValue(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold text-green-600 focus:outline-none focus:border-green-500 text-black" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowAddFundsModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Tabung</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

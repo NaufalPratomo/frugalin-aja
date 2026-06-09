@@ -19,17 +19,31 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ message: "Transaksi tidak ditemukan" }, { status: 404 });
     }
 
-    // 2. Cari akun terkait
+    // 2. Cari akun terkait dan kembalikan saldonya
     const account = await Account.findById(transaction.accountId);
-    if (account) {
-      // 3. Batalkan dampak nominal transaksi terhadap saldo akun
-      const transactionAmount = Number(transaction.amount);
-      if (transaction.type === "INCOME") {
-        account.balance -= transactionAmount;
-      } else if (transaction.type === "EXPENSE") {
-        account.balance += transactionAmount;
+    const transactionAmount = Number(transaction.amount);
+
+    if (transaction.type === "TRANSFER") {
+      if (account) {
+        account.balance += transactionAmount; // Tambah kembali ke rekening asal
+        await account.save();
       }
-      await account.save();
+      if (transaction.toAccountId) {
+        const destAccount = await Account.findById(transaction.toAccountId);
+        if (destAccount) {
+          destAccount.balance -= transactionAmount; // Kurangi dari rekening tujuan
+          await destAccount.save();
+        }
+      }
+    } else {
+      if (account) {
+        if (transaction.type === "INCOME") {
+          account.balance -= transactionAmount;
+        } else if (transaction.type === "EXPENSE") {
+          account.balance += transactionAmount;
+        }
+        await account.save();
+      }
     }
 
     // 4. Hapus transaksi dari database

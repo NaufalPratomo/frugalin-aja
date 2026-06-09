@@ -25,38 +25,69 @@ export async function POST(req) {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
-    const { accountId, type, amount, category, description, date } = await req.json();
+    const { accountId, toAccountId, type, amount, category, description, date } = await req.json();
     if (!accountId || !type || !amount || !category) {
       return NextResponse.json({ message: "Field wajib tidak boleh kosong" }, { status: 400 });
     }
 
+    if (type === "TRANSFER" && !toAccountId) {
+      return NextResponse.json({ message: "Rekening tujuan wajib diisi untuk transfer" }, { status: 400 });
+    }
+
     await dbConnect();
 
-    // PERBAIKAN LOGIKA: Konversi string accountId menjadi Mongoose ObjectId yang valid
     const targetAccountId = new mongoose.Types.ObjectId(accountId);
-
     const account = await Account.findById(targetAccountId);
     if (!account) {
-      return NextResponse.json({ message: "Akun bank tidak ditemukan" }, { status: 404 });
+      return NextResponse.json({ message: "Akun bank asal tidak ditemukan" }, { status: 404 });
     }
 
     const transactionAmount = Number(amount);
-    let change = type === "INCOME" ? transactionAmount : -transactionAmount;
+    let newTransaction;
 
-    // Simpan data transaksi
-    const newTransaction = await Transaction.create({
-      userId: session.user.id,
-      accountId: targetAccountId,
-      type,
-      amount: transactionAmount,
-      category,
-      description,
-      date: date || new Date()
-    });
+    if (type === "TRANSFER") {
+      const destAccountId = new mongoose.Types.ObjectId(toAccountId);
+      const destAccount = await Account.findById(destAccountId);
+      if (!destAccount) {
+        return NextResponse.json({ message: "Akun bank tujuan tidak ditemukan" }, { status: 404 });
+      }
 
-    // Jalankan kalkulasi update saldo dompet/bank terkait
-    account.balance += change;
-    await account.save();
+      // Simpan data transaksi transfer
+      newTransaction = await Transaction.create({
+        userId: session.user.id,
+        accountId: targetAccountId,
+        toAccountId: destAccountId,
+        type,
+        amount: transactionAmount,
+        category,
+        description,
+        date: date || new Date()
+      });
+
+      // Update saldo kedua akun
+      account.balance -= transactionAmount;
+      destAccount.balance += transactionAmount;
+
+      await account.save();
+      await destAccount.save();
+    } else {
+      let change = type === "INCOME" ? transactionAmount : -transactionAmount;
+
+      // Simpan data transaksi
+      newTransaction = await Transaction.create({
+        userId: session.user.id,
+        accountId: targetAccountId,
+        type,
+        amount: transactionAmount,
+        category,
+        description,
+        date: date || new Date()
+      });
+
+      // Jalankan kalkulasi update saldo dompet/bank terkait
+      account.balance += change;
+      await account.save();
+    }
 
     return NextResponse.json(newTransaction, { status: 201 });
   } catch (error) {
