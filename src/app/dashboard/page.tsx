@@ -583,7 +583,7 @@ export default function DashboardPage() {
       } finally {
         setAiCategoryLoading(false);
       }
-    }, 500);
+    }, 3000);
 
     return () => {
       if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
