@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useToast } from "../../components/Toast";
 import SplashScreen from "../../components/SplashScreen";
 
@@ -232,31 +232,31 @@ function getBudgetCategoryGroup(category: string): string {
   if (!category) return "Lainnya";
   const cat = category.toLowerCase().trim();
   
-  if (/makan|minum|kopi|cafe|resto|warung|food|beverage|coffe|teh|chicken|burger|pizza|kuliner|dapur|roti|bakery|gofood|grabfood|shopeefood/i.test(cat)) {
+  if (/makan|minum|kopi|cafe|resto|warung|food|beverage|coffe|coffee|teh|chicken|burger|pizza|kuliner|dapur|roti|bakery|gofood|grabfood|shopeefood|nasi|ayam|sate|soto|gudeg|rawon|pecel|lalapan|jus|es\s|snack|cemilan|gorengan|kue|jajan|kantin|catering|bakso|mie|indomie|noodle|steak|sushi|ramen|boba|bubble|dimsum|seafood|ikan|daging|sayur|buah|salad|dessert|ice\s*cream|gelato|donat|martabak|kebab|shawarma|pempek|siomay|batagor|seblak|cilok|cimol|sempol|ricebowl|rice\s*bowl/i.test(cat)) {
     return "Makanan & Minuman";
   }
   
-  if (/transport|bensin|pertamina|spbu|shell|gojek|grab|uber|ojek|taxi|taksi|tol|parkir|tiket|kereta|pesawat|travel|krl|mrt|goride|grabcab|gocar/i.test(cat)) {
+  if (/transport|bensin|pertamina|spbu|shell|gojek|grab|uber|ojek|taxi|taksi|tol|parkir|tiket|kereta|pesawat|travel|krl|mrt|goride|grabcab|gocar|motor|mobil|ban|oli|servis|service|bengkel|shock|breaker|sparepart|spare\s*part|knalpot|aki|radiator|kampas|rem|kopling|rantai|helm|otomotif|cuci\s*mobil|cuci\s*motor|tune\s*up|ganti\s*oli|velg|kaca|wiper|lampu\s*mobil|lampu\s*motor|body\s*repair|ketok\s*magic|derek|onderdil|variasi|modifikasi|angkot|bus|busway|transjakarta|damri|kapal|ferry|ojol|maxim|indriver|stnk|pajak\s*kendaraan|sim|perpanjang/i.test(cat)) {
     return "Transportasi";
   }
   
-  if (/belanja|harian|mart|indo|alfa|super|pasar|hiper|shop|store|sabun|odol|detergen|susu|sembako|minyak|beras|trans|carefour|lotte|baju|celana|sepatu|fashion|mall/i.test(cat)) {
+  if (/belanja|harian|mart|indo|alfa|super|pasar|hiper|shop|store|sabun|odol|detergen|susu|sembako|minyak|beras|trans|carefour|lotte|baju|celana|sepatu|fashion|mall|toko|laundry|dry\s*clean|alat|peralatan|elektronik|hp|handphone|gadget|furniture|rumah\s*tangga|gas|lpg|galon|tissue|shampo|shampoo|kondisioner|parfum|kosmetik|makeup|skincare|perawatan|sandal|tas|dompet|jam\s*tangan|aksesoris|kacamata|kaos|jaket|hoodie|kemeja|batik|mukena|sarung|perlengkapan|atk|alat\s*tulis|print|fotocopy|pulpen/i.test(cat)) {
     return "Belanja & Harian";
   }
   
-  if (/tagihan|pulsa|wifi|internet|netflix|spotify|youtube|disney|listrik|token|bpjs|pdam|langganan|subscription/i.test(cat)) {
+  if (/tagihan|pulsa|wifi|internet|netflix|spotify|youtube|disney|listrik|token|bpjs|pdam|langganan|subscription|cicilan|kredit|angsuran|pinjaman|sewa|kost|kontrakan|indihome|telkomsel|xl|axis|tri|smartfren|iuran|pajak|asuransi|premi|kartu\s*kredit|gopay|ovo|dana|shopeepay|top\s*up|topup|e-money|emoney|e-toll|etoll|paket\s*data|kuota|hosting|domain|cloud|vps|apple|icloud|google\s*one/i.test(cat)) {
     return "Tagihan & Pulsa";
   }
 
-  if (/sehat|sakit|dokter|obat|rs|rumah sakit|klinik|apotek|vitamin/i.test(cat)) {
+  if (/sehat|sakit|dokter|obat|rs|rumah\s*sakit|klinik|apotek|vitamin|gym|fitness|olahraga|supplement|suplemen|check\s*up|checkup|medical|lab|laboratorium|rontgen|usg|rawat|operasi|gigi|mata|tht|kulit|psikolog|terapi|fisioterapi|vaksin|imunisasi|pijat|massage|herbal|farmasi/i.test(cat)) {
     return "Kesehatan";
   }
 
-  if (/hiburan|rekreasi|nonton|bioskop|travel|hotel|liburan|game|topup game|playstation/i.test(cat)) {
+  if (/hiburan|rekreasi|nonton|bioskop|travel|hotel|liburan|game|topup\s*game|playstation|wisata|piknik|camping|renang|kolam|taman|pantai|gunung|villa|resort|airbnb|konser|musik|festival|karaoke|bowling|billiard|escape\s*room|theme\s*park|dufan|ancol|waterpark|tiket\s*masuk|zoo|kebun\s*binatang|museum|cinema|cgv|xxi|imax|steam|ps5|ps4|nintendo|xbox|mobile\s*legend|free\s*fire|valorant|manga|komik|buku|novel|mainan|hobi|fotografi|kamera/i.test(cat)) {
     return "Hiburan & Rekreasi";
   }
 
-  return category.charAt(0).toUpperCase() + category.slice(1);
+  return "Lainnya";
 }
 
 export default function DashboardPage() {
@@ -333,6 +333,11 @@ export default function DashboardPage() {
   const [txAmount, setTxAmount] = useState("");
   const [txCategory, setTxCategory] = useState("");
   const [txDesc, setTxDesc] = useState("");
+
+  // AI Category Detection state
+  const [aiCategory, setAiCategory] = useState<string | null>(null);
+  const [aiCategoryLoading, setAiCategoryLoading] = useState(false);
+  const aiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Edit Balance state
   const [selectedAccId, setSelectedAccId] = useState("");
@@ -544,6 +549,54 @@ export default function DashboardPage() {
     }
   };
 
+  // AI fallback categorizer — called with debounce when description changes
+  useEffect(() => {
+    if (!txDesc || txType === "TRANSFER") {
+      setAiCategory(null);
+      setAiCategoryLoading(false);
+      return;
+    }
+
+    const regexCategory = getBudgetCategoryGroup(txDesc);
+    if (regexCategory !== "Lainnya") {
+      // Regex detected a known category — no need for AI
+      setAiCategory(null);
+      setAiCategoryLoading(false);
+      return;
+    }
+
+    // Regex returned "Lainnya" — ask AI to confirm
+    setAiCategoryLoading(true);
+    if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
+
+    aiDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: txDesc }),
+        });
+        const data = await res.json();
+        setAiCategory(data.category || "Lainnya");
+      } catch {
+        setAiCategory("Lainnya");
+      } finally {
+        setAiCategoryLoading(false);
+      }
+    }, 500);
+
+    return () => {
+      if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
+    };
+  }, [txDesc, txType]);
+
+  // Resolve final category: regex first, then AI fallback
+  const resolveCategory = (desc: string): string => {
+    const regexResult = getBudgetCategoryGroup(desc || "Lainnya");
+    if (regexResult !== "Lainnya") return regexResult;
+    return aiCategory || "Lainnya";
+  };
+
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     showToast("Mencatat transaksi keuangan...", "info");
@@ -553,12 +606,24 @@ export default function DashboardPage() {
         showToast("Rekening asal dan tujuan tidak boleh sama!", "error");
         return;
       }
+
+      // Use AI category if regex returned Lainnya and AI has a better answer
+      let finalCategory = "Transfer";
+      if (!isTransfer) {
+        const regexCat = getBudgetCategoryGroup(txDesc || "Lainnya");
+        if (regexCat === "Lainnya" && aiCategory && aiCategory !== "Lainnya") {
+          finalCategory = aiCategory;
+        } else {
+          finalCategory = regexCat;
+        }
+      }
+
       const payload = {
         accountId: txAccount,
         toAccountId: isTransfer ? txToAccount : undefined,
         type: txType,
         amount: Number(txAmount),
-        category: isTransfer ? "Transfer" : txCategory,
+        category: finalCategory,
         description: txDesc
       };
       
@@ -1451,65 +1516,105 @@ export default function DashboardPage() {
                 </p>
               )}
 
-              {/* Category Budgets */}
-              {budgets.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                  <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Anggaran per Kategori</p>
-                  {budgets.map(b => {
-                    const spent = categoryExpenses[getBudgetCategoryGroup(b.category)] || 0;
-                    const pct = Math.min((spent / b.limit) * 100, 100);
-                    return (
-                      <div key={b._id} className="space-y-1.5 group">
-                        <div className="flex justify-between text-[11px] font-semibold items-center">
-                          <span className="text-gray-700 flex items-center gap-1.5 font-bold">
-                            {b.category}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-gray-500 font-medium">
-                              Rp {spent.toLocaleString("id-ID")} / Rp {b.limit.toLocaleString("id-ID")}
-                            </span>
-                            
-                            {/* Edit Button */}
-                            <button
-                              onClick={() => {
-                                setEditingBudgetId(b._id);
-                                setBudgetCategory(b.category);
-                                setBudgetLimit(b.limit.toString());
-                                setShowBudgetModal(true);
-                              }}
-                              className="text-gray-400 hover:text-green-600 transition-all cursor-pointer p-0.5 rounded hover:bg-gray-50"
-                              title="Edit Limit Kategori"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                              </svg>
-                            </button>
+              {/* Category Budgets - Show ALL categories with spending */}
+              {(() => {
+                // Merge all categories: those with budgets AND those with spending
+                const budgetMap: Record<string, BudgetType> = {};
+                budgets.forEach(b => { budgetMap[getBudgetCategoryGroup(b.category)] = b; });
 
-                            {/* Delete Button */}
-                            <button
-                              onClick={() => handleDeleteBudget(b._id)}
-                              className="text-gray-400 hover:text-red-500 transition-all cursor-pointer p-0.5 rounded hover:bg-gray-50"
-                              title="Hapus Limit Kategori"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                              </svg>
-                            </button>
+                const allCategories = new Set<string>([
+                  ...Object.keys(categoryExpenses),
+                  ...budgets.map(b => getBudgetCategoryGroup(b.category))
+                ]);
+
+                const categoryList = Array.from(allCategories)
+                  .map(cat => ({
+                    category: cat,
+                    spent: categoryExpenses[cat] || 0,
+                    budget: budgetMap[cat] || null,
+                  }))
+                  .sort((a, b) => b.spent - a.spent);
+
+                if (categoryList.length === 0) return null;
+
+                return (
+                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                    <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Rincian Pengeluaran per Kategori</p>
+                    {categoryList.map(item => {
+                      const hasLimit = item.budget !== null;
+                      const limit = hasLimit ? item.budget!.limit : 0;
+                      const pct = hasLimit ? Math.min((item.spent / limit) * 100, 100) : 0;
+                      // For categories without limit, show a proportional bar relative to the highest spender
+                      const maxSpent = categoryList.length > 0 ? categoryList[0].spent : 1;
+                      const proportionalPct = maxSpent > 0 ? (item.spent / maxSpent) * 100 : 0;
+
+                      return (
+                        <div key={item.category} className="space-y-1.5 group">
+                          <div className="flex justify-between text-[11px] font-semibold items-center">
+                            <span className="text-gray-700 flex items-center gap-1.5 font-bold">
+                              {item.category}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 font-medium">
+                                Rp {item.spent.toLocaleString("id-ID")}
+                                {hasLimit && (
+                                  <span className="text-gray-400"> / Rp {limit.toLocaleString("id-ID")}</span>
+                                )}
+                              </span>
+                              
+                              {hasLimit && (
+                                <>
+                                  {/* Edit Button */}
+                                  <button
+                                    onClick={() => {
+                                      setEditingBudgetId(item.budget!._id);
+                                      setBudgetCategory(item.budget!.category);
+                                      setBudgetLimit(item.budget!.limit.toString());
+                                      setShowBudgetModal(true);
+                                    }}
+                                    className="text-gray-400 hover:text-green-600 transition-all cursor-pointer p-0.5 rounded hover:bg-gray-50"
+                                    title="Edit Limit Kategori"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                    </svg>
+                                  </button>
+
+                                  {/* Delete Button */}
+                                  <button
+                                    onClick={() => handleDeleteBudget(item.budget!._id)}
+                                    className="text-gray-400 hover:text-red-500 transition-all cursor-pointer p-0.5 rounded hover:bg-gray-50"
+                                    title="Hapus Limit Kategori"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                            {hasLimit ? (
+                              <div
+                                style={{ width: `${pct}%` }}
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  pct >= 95 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-600"
+                                }`}
+                              />
+                            ) : (
+                              <div
+                                style={{ width: `${proportionalPct}%` }}
+                                className="h-full rounded-full transition-all duration-300 bg-blue-400"
+                              />
+                            )}
                           </div>
                         </div>
-                        <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
-                          <div
-                            style={{ width: `${pct}%` }}
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              pct >= 95 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-600"
-                            }`}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -2270,26 +2375,39 @@ export default function DashboardPage() {
                 <input required type="number" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-extrabold text-sm" />
               </div>
 
+
+
               {txType !== "TRANSFER" && (
                 <div>
-                  <label className="block mb-1 font-semibold text-gray-600">Kategori</label>
-                  <input required type="text" placeholder="Contoh: Dividen BBRI, Bensin, Makan Siang" value={txCategory} onChange={e => setTxCategory(e.target.value)} list="tx-category-options" className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
-                  <datalist id="tx-category-options">
-                    <option value="Makanan & Minuman" />
-                    <option value="Transportasi" />
-                    <option value="Belanja & Harian" />
-                    <option value="Tagihan & Pulsa" />
-                    <option value="Kesehatan" />
-                    <option value="Hiburan & Rekreasi" />
-                    <option value="Lainnya" />
-                  </datalist>
+                  <label className="block mb-1 font-semibold text-gray-600">Keterangan</label>
+                  <input required type="text" placeholder="Contoh: Makan siang bakso, Bensin motor, Bayar listrik" value={txDesc} onChange={e => setTxDesc(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+                  {txDesc && (
+                    <p className="text-[10px] text-gray-400 mt-1.5 flex items-center gap-1">
+                      {aiCategoryLoading ? (
+                        <>
+                          <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                          <span className="animate-pulse">AI sedang mendeteksi kategori...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className={`inline-block w-2 h-2 rounded-full ${
+                            getBudgetCategoryGroup(txDesc) !== "Lainnya" ? "bg-blue-400" 
+                            : aiCategory && aiCategory !== "Lainnya" ? "bg-emerald-400" 
+                            : "bg-gray-400"
+                          }`}></span>
+                          Kategori{getBudgetCategoryGroup(txDesc) === "Lainnya" && aiCategory && aiCategory !== "Lainnya" ? " (AI)" : ""}: <span className="font-bold text-gray-600">{resolveCategory(txDesc)}</span>
+                        </>
+                      )}
+                    </p>
+                  )}
                 </div>
               )}
-
-              <div>
-                <label className="block mb-1 font-semibold text-gray-600">Keterangan</label>
-                <input type="text" placeholder="Opsional" value={txDesc} onChange={e => setTxDesc(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
-              </div>
+              {txType === "TRANSFER" && (
+                <div>
+                  <label className="block mb-1 font-semibold text-gray-600">Keterangan (Opsional)</label>
+                  <input type="text" placeholder="Opsional" value={txDesc} onChange={e => setTxDesc(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
+                </div>
+              )}
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setShowTxModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer text-gray-700">Batal</button>
                 <button type="submit" className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold cursor-pointer">Rekam Transaksi</button>
@@ -2456,14 +2574,20 @@ export default function DashboardPage() {
 
                     <div>
                       <label className="block mb-1 font-semibold text-gray-600">Kategori Pengeluaran</label>
-                      <input 
+                      <select 
                         required 
-                        type="text" 
-                        placeholder="Contoh: Makanan, Belanja Harian" 
                         value={ocrCategory} 
                         onChange={e => setOcrCategory(e.target.value)} 
-                        className="w-full border p-2.5 rounded-xl text-xs bg-white text-black focus:outline-none focus:border-green-500" 
-                      />
+                        className="w-full border p-2.5 rounded-xl text-xs bg-white text-black focus:outline-none focus:border-green-500 font-semibold" 
+                      >
+                        <option value="Makanan & Minuman">Makanan & Minuman</option>
+                        <option value="Transportasi">Transportasi</option>
+                        <option value="Belanja & Harian">Belanja & Harian</option>
+                        <option value="Tagihan & Pulsa">Tagihan & Pulsa</option>
+                        <option value="Kesehatan">Kesehatan</option>
+                        <option value="Hiburan & Rekreasi">Hiburan & Rekreasi</option>
+                        <option value="Lainnya">Lainnya</option>
+                      </select>
                     </div>
                   </div>
 
@@ -2526,17 +2650,17 @@ export default function DashboardPage() {
             <p className="text-xs text-gray-400 mb-4">Batasi anggaran belanja untuk kategori spesifik agar keuangan tetap sehat.</p>
             <form onSubmit={handleAddBudget} className="space-y-3 text-xs">
               <div>
-                <label className="block mb-1 font-semibold text-gray-600">Pilih / Tulis Kategori</label>
-                <input required type="text" placeholder="Contoh: Makanan, Transportasi, Hiburan" value={budgetCategory} onChange={e => setBudgetCategory(e.target.value)} list="category-options" className="w-full border p-2.5 rounded-lg text-xs font-semibold focus:outline-none focus:border-green-500 text-black" />
-                <datalist id="category-options">
-                  <option value="Makanan" />
-                  <option value="Transportasi" />
-                  <option value="Hiburan" />
-                  <option value="Belanja" />
-                  <option value="Kesehatan" />
-                  <option value="Tagihan" />
-                  <option value="Lainnya" />
-                </datalist>
+                <label className="block mb-1 font-semibold text-gray-600">Pilih Kategori</label>
+                <select required value={budgetCategory} onChange={e => setBudgetCategory(e.target.value)} className="w-full border p-2.5 rounded-lg text-xs font-semibold focus:outline-none focus:border-green-500 text-black bg-white">
+                  <option value="" disabled>— Pilih Kategori —</option>
+                  <option value="Makanan & Minuman">Makanan & Minuman</option>
+                  <option value="Transportasi">Transportasi</option>
+                  <option value="Belanja & Harian">Belanja & Harian</option>
+                  <option value="Tagihan & Pulsa">Tagihan & Pulsa</option>
+                  <option value="Kesehatan">Kesehatan</option>
+                  <option value="Hiburan & Rekreasi">Hiburan & Rekreasi</option>
+                  <option value="Lainnya">Lainnya</option>
+                </select>
               </div>
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Batas Anggaran Bulanan (Rp)</label>
