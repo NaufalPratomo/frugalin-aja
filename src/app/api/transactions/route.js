@@ -14,6 +14,8 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const month = searchParams.get("month");
     const year = searchParams.get("year");
+    const page = searchParams.get("page") ? parseInt(searchParams.get("page")) : null;
+    const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")) : 20;
 
     await dbConnect();
     
@@ -31,8 +33,13 @@ export async function GET(req) {
       query.date = { $gte: start, $lt: end };
     }
 
+    let queryBuilder = Transaction.find(query).sort({ date: -1 });
+    if (page) {
+      queryBuilder = queryBuilder.skip((page - 1) * limit).limit(limit);
+    }
+
     // Mengambil transaksi dan melakukan sorting berdasarkan tanggal terbaru
-    const transactions = await Transaction.find(query).sort({ date: -1 });
+    const transactions = await queryBuilder;
     return NextResponse.json(transactions, { status: 200 });
   } catch (error) {
     return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
