@@ -244,7 +244,7 @@ function getBudgetCategoryGroup(category: string): string {
     return "Belanja & Harian";
   }
   
-  if (/tagihan|pulsa|wifi|internet|netflix|spotify|youtube|disney|listrik|token|bpjs|pdam|langganan|subscription|cicilan|kredit|angsuran|pinjaman|sewa|kost|kontrakan|indihome|telkomsel|xl|axis|tri|smartfren|iuran|pajak|asuransi|premi|kartu\s*kredit|gopay|ovo|dana|shopeepay|top\s*up|topup|e-money|emoney|e-toll|etoll|paket\s*data|kuota|hosting|domain|cloud|vps|apple|icloud|google\s*one/i.test(cat)) {
+  if (/tagihan|pulsa|wifi|internet|netflix|spotify|youtube|disney|listrik|token|bpjs|pdam|langganan|subscription|cicilan|kredit|angsuran|pinjaman|sewa|kos|kost|kontrakan|indihome|telkomsel|xl|axis|tri|smartfren|iuran|pajak|asuransi|premi|kartu\s*kredit|gopay|ovo|dana|shopeepay|top\s*up|topup|e-money|emoney|e-toll|etoll|paket\s*data|kuota|hosting|domain|cloud|vps|apple|icloud|google\s*one/i.test(cat)) {
     return "Tagihan & Pulsa";
   }
 
@@ -266,6 +266,9 @@ export default function DashboardPage() {
 
   const [accounts, setAccounts] = useState<AccountType[]>([]);
   const [transactions, setTransactions] = useState<TransactionType[]>([]);
+  const [historyTransactions, setHistoryTransactions] = useState<TransactionType[]>([]);
+  const [filterMonth, setFilterMonth] = useState<number>(new Date().getMonth() + 1);
+  const [filterYear, setFilterYear] = useState<number>(new Date().getFullYear());
   const [filterType, setFilterType] = useState<string>("ALL");
   const [monthlyLimit, setMonthlyLimit] = useState<number>(0);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -374,9 +377,13 @@ export default function DashboardPage() {
         }
       }
 
-      const resTx = await fetch("/api/transactions");
+      const resTx = await fetch(`/api/transactions?year=${selectedYear}`);
       const dataTx = await resTx.json();
       if (Array.isArray(dataTx)) setTransactions(dataTx);
+
+      const resHistoryTx = await fetch(`/api/transactions?month=${filterMonth}&year=${filterYear}`);
+      const dataHistoryTx = await resHistoryTx.json();
+      if (Array.isArray(dataHistoryTx)) setHistoryTransactions(dataHistoryTx);
 
       // KODE LOGIKA PENYANGGA UNTUK LIMIT ANGGARAN
       const resLimit = await fetch("/api/user/limit");
@@ -419,6 +426,36 @@ export default function DashboardPage() {
       fetchData();
     }
   }, [status]);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      const fetchHistory = async () => {
+        try {
+          const resHistoryTx = await fetch(`/api/transactions?month=${filterMonth}&year=${filterYear}`);
+          const dataHistoryTx = await resHistoryTx.json();
+          if (Array.isArray(dataHistoryTx)) setHistoryTransactions(dataHistoryTx);
+        } catch (e) {
+          console.error("Gagal sinkronisasi riwayat transaksi", e);
+        }
+      };
+      fetchHistory();
+    }
+  }, [filterMonth, filterYear, status]);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      const fetchChartTx = async () => {
+        try {
+          const resTx = await fetch(`/api/transactions?year=${selectedYear}`);
+          const dataTx = await resTx.json();
+          if (Array.isArray(dataTx)) setTransactions(dataTx);
+        } catch (e) {
+          console.error("Gagal sinkronisasi data grafik keuangan", e);
+        }
+      };
+      fetchChartTx();
+    }
+  }, [selectedYear, status]);
 
   useEffect(() => {
     // Cek jika aplikasi berjalan dalam mode standalone PWA
@@ -971,7 +1008,7 @@ export default function DashboardPage() {
   // Hitung persentase pemakaian limit budget bulanan
   const limitPercentage = monthlyLimit > 0 ? Math.min((totalMonthlyExpense / monthlyLimit) * 100, 100) : 0;
 
-  const filteredTransactions = transactions.filter(tx => {
+  const filteredTransactions = historyTransactions.filter(tx => {
     if (filterType === "ALL") return true;
     const targetAccount = accounts.find(a => a._id === tx.accountId);
     return targetAccount?.type === filterType;
@@ -1200,6 +1237,29 @@ export default function DashboardPage() {
     return (
       <div className={`bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col ${customHeightClass}`}>
         <h3 className="font-bold text-gray-900 mb-2 text-sm">Riwayat Transaksi</h3>
+
+        {/* MONTH & YEAR FILTER DROPDOWNS */}
+        <div className="flex gap-2 mb-3 items-center">
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(Number(e.target.value))}
+            className="border border-gray-150 bg-white text-gray-800 text-[11px] font-bold px-2.5 py-1.5 rounded-xl outline-none focus:border-green-500 cursor-pointer"
+          >
+            {monthNames.map((m, idx) => (
+              <option key={idx} value={idx + 1}>{m}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterYear}
+            onChange={(e) => setFilterYear(Number(e.target.value))}
+            className="border border-gray-150 bg-white text-gray-800 text-[11px] font-bold px-2.5 py-1.5 rounded-xl outline-none focus:border-green-500 cursor-pointer"
+          >
+            {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 4 + i).reverse().map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
         
         {/* BADGES */}
         <div className="flex gap-1 mb-4 overflow-x-auto pb-1">

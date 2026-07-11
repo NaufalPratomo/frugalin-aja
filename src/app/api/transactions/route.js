@@ -6,14 +6,33 @@ import { authOptions } from "../../../lib/auth";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
-export async function GET() {
+export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
+    const { searchParams } = new URL(req.url);
+    const month = searchParams.get("month");
+    const year = searchParams.get("year");
+
     await dbConnect();
+    
+    let query = { userId: session.user.id };
+    if (month && year) {
+      const m = parseInt(month);
+      const y = parseInt(year);
+      const start = new Date(y, m - 1, 1);
+      const end = new Date(y, m, 1);
+      query.date = { $gte: start, $lt: end };
+    } else if (year) {
+      const y = parseInt(year);
+      const start = new Date(y, 0, 1);
+      const end = new Date(y + 1, 0, 1);
+      query.date = { $gte: start, $lt: end };
+    }
+
     // Mengambil transaksi dan melakukan sorting berdasarkan tanggal terbaru
-    const transactions = await Transaction.find({ userId: session.user.id }).sort({ date: -1 });
+    const transactions = await Transaction.find(query).sort({ date: -1 });
     return NextResponse.json(transactions, { status: 200 });
   } catch (error) {
     return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
