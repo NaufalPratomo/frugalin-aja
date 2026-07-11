@@ -2386,7 +2386,7 @@ export default function DashboardPage() {
                       {aiCategoryLoading ? (
                         <>
                           <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                          <span className="animate-pulse">AI sedang mendeteksi kategori...</span>
+                          <span className="animate-pulse">Mengonfirmasi ulang dengan AI...</span>
                         </>
                       ) : (
                         <>
