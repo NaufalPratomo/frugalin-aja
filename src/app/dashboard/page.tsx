@@ -1421,7 +1421,7 @@ export default function DashboardPage() {
                   </p>
                   <button
                     onClick={() => handleDeleteTransaction(tx._id)}
-                    className="text-gray-300 hover:text-red-500 p-1.5 rounded transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                    className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100 cursor-pointer flex-shrink-0"
                     title="Hapus Transaksi"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
@@ -2463,7 +2463,7 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-1.5 border-t border-gray-100/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-2 pt-1.5 border-t border-gray-100/50 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleDeleteBill(bill._id)}
                             className="text-[10px] text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer"
@@ -2528,7 +2528,7 @@ export default function DashboardPage() {
                           <h4 className="font-extrabold text-gray-900 text-sm leading-snug">{goal.name}</h4>
                           <button
                             onClick={() => handleDeleteSavingsGoal(goal._id)}
-                            className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-xs p-0.5"
+                            className="text-gray-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer text-xs p-1 rounded hover:bg-red-50 flex-shrink-0"
                             title="Hapus Target"
                           >
                             ✕
@@ -2838,6 +2838,11 @@ export default function DashboardPage() {
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Nominal (Rp)</label>
                 <input required type="number" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-extrabold text-sm" />
+                {txAmount && Number(txAmount) > 0 && (
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1 tracking-wide">
+                    Terformat: Rp {Number(txAmount).toLocaleString("id-ID")}
+                  </p>
+                )}
               </div>
 
 
@@ -3245,6 +3250,28 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* FLOATING ACTION BUTTON (MOBILE ONLY) */}
+      <div className="md:hidden fixed bottom-6 right-6 z-40">
+        <button 
+          onClick={() => {
+            if (accounts.length > 0) {
+              setTxAmount("");
+              setTxCategory("");
+              setTxDesc("");
+              setShowTxModal(true);
+            } else {
+              showToast("Tambahkan rekening bank terlebih dahulu!", "error");
+            }
+          }}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white p-3.5 rounded-full shadow-2xl shadow-emerald-950/40 flex items-center justify-center cursor-pointer transition-all active:scale-95 border border-emerald-400/30 ring-4 ring-emerald-500/20"
+          title="Catat Transaksi Baru"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-6 h-6">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+      </div>
 
       {/* FOOTER BRANDING */}
       <footer className="max-w-6xl mx-auto text-center mt-auto pt-12 pb-4 text-[11px] text-gray-400">
