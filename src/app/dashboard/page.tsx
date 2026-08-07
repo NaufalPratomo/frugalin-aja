@@ -1023,6 +1023,79 @@ export default function DashboardPage() {
   // Hitung persentase pemakaian limit budget bulanan
   const limitPercentage = monthlyLimit > 0 ? Math.min((totalMonthlyExpense / monthlyLimit) * 100, 100) : 0;
 
+  // Hitung pengeluaran per minggu dengan Penyesuaian Otomatis (Dynamic Carry-over)
+  const initialWeeklyLimit = monthlyLimit > 0 ? Math.round(monthlyLimit / 4) : 0;
+  const currentDate = new Date().getDate();
+  const currentWeekIndex = currentDate <= 7 ? 1 : currentDate <= 14 ? 2 : currentDate <= 21 ? 3 : 4;
+  
+  const currentMonthExpenseTxs = transactions.filter(tx => {
+    const d = new Date(tx.date);
+    return tx.type === "EXPENSE" && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  const w1Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 1 && new Date(tx.date).getDate() <= 7).reduce((sum, tx) => sum + tx.amount, 0);
+  const w2Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 8 && new Date(tx.date).getDate() <= 14).reduce((sum, tx) => sum + tx.amount, 0);
+  const w3Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 15 && new Date(tx.date).getDate() <= 21).reduce((sum, tx) => sum + tx.amount, 0);
+  const w4Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 22).reduce((sum, tx) => sum + tx.amount, 0);
+
+  const rawWeeklySpents = [w1Spent, w2Spent, w3Spent, w4Spent];
+
+  // Hitung total pengeluaran sejauh ini di bulan ini (termasuk minggu berjalan)
+  const totalSpentSoFar = w1Spent + w2Spent + w3Spent + w4Spent;
+  const remainingMonthlyBudgetRealtime = Math.max(0, monthlyLimit - totalSpentSoFar);
+  const futureWeeksCount = 4 - currentWeekIndex;
+
+  // Limit anggaran untuk minggu-minggu berikutnya setelah minggu berjalan
+  const futureWeeklyLimit = (monthlyLimit > 0 && futureWeeksCount > 0)
+    ? Math.round(remainingMonthlyBudgetRealtime / futureWeeksCount)
+    : 0;
+
+  // Limit anggaran untuk minggu berjalan (ditentukan dari sisa budget pada awal minggu ini)
+  const pastWeeksSpentBeforeCurrent = rawWeeklySpents.slice(0, currentWeekIndex - 1).reduce((sum, val) => sum + val, 0);
+  const weeksLeftFromCurrent = 4 - (currentWeekIndex - 1);
+  const currentWeekTargetLimit = monthlyLimit > 0
+    ? Math.round(Math.max(0, monthlyLimit - pastWeeksSpentBeforeCurrent) / weeksLeftFromCurrent)
+    : 0;
+
+  const weeklyBreakdown = [
+    {
+      id: 1,
+      label: "Minggu 1",
+      range: "1-7",
+      isCurrent: currentWeekIndex === 1,
+      spent: w1Spent,
+      targetLimit: currentWeekIndex === 1 ? currentWeekTargetLimit : initialWeeklyLimit,
+    },
+    {
+      id: 2,
+      label: "Minggu 2",
+      range: "8-14",
+      isCurrent: currentWeekIndex === 2,
+      spent: w2Spent,
+      targetLimit: currentWeekIndex === 2 ? currentWeekTargetLimit : currentWeekIndex > 2 ? initialWeeklyLimit : futureWeeklyLimit,
+    },
+    {
+      id: 3,
+      label: "Minggu 3",
+      range: "15-21",
+      isCurrent: currentWeekIndex === 3,
+      spent: w3Spent,
+      targetLimit: currentWeekIndex === 3 ? currentWeekTargetLimit : currentWeekIndex > 3 ? initialWeeklyLimit : futureWeeklyLimit,
+    },
+    {
+      id: 4,
+      label: "Minggu 4+",
+      range: "22+",
+      isCurrent: currentWeekIndex === 4,
+      spent: w4Spent,
+      targetLimit: currentWeekIndex === 4 ? currentWeekTargetLimit : futureWeeklyLimit,
+    },
+  ];
+
+  const activeWeekData = weeklyBreakdown.find(w => w.isCurrent) || weeklyBreakdown[0];
+  const activeWeekTarget = activeWeekData.targetLimit || initialWeeklyLimit;
+  const activeWeekPct = activeWeekTarget > 0 ? (activeWeekData.spent / activeWeekTarget) * 100 : 0;
+
   const filteredTransactions = historyTransactions.filter(tx => {
     if (filterType === "ALL") return true;
     const targetAccount = accounts.find(a => a._id === tx.accountId);
@@ -1602,6 +1675,90 @@ export default function DashboardPage() {
                   Peringatan: Pengeluaran bulan ini sudah mencapai {limitPercentage.toFixed(0)}% dari batas limit anggaran!
                 </p>
               )}
+
+              {/* INDIKATOR PENGELUARAN PER MINGGU */}
+              <div className="mt-4 pt-3.5 border-t border-gray-100">
+                <div className="flex flex-wrap justify-between items-center mb-2.5 gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5" />
+                    </svg>
+                    <span className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
+                      Indikator Mingguan (Limit Adaptif)
+                    </span>
+                  </div>
+                  {monthlyLimit > 0 && (
+                    <span className="text-[9px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-100">
+                      {futureWeeklyLimit > initialWeeklyLimit 
+                        ? `Target Sisa Minggu: Rp ${futureWeeklyLimit.toLocaleString("id-ID")}/mg (+Bonus Hemat)` 
+                        : futureWeeklyLimit < initialWeeklyLimit 
+                        ? `Target Sisa Minggu: Rp ${futureWeeklyLimit.toLocaleString("id-ID")}/mg (Disesuaikan)`
+                        : `Target Standard: Rp ${initialWeeklyLimit.toLocaleString("id-ID")}/mg`}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {weeklyBreakdown.map((w) => {
+                    const target = w.targetLimit > 0 ? w.targetLimit : initialWeeklyLimit;
+                    const pct = target > 0 ? Math.min((w.spent / target) * 100, 100) : 0;
+                    const isOver = target > 0 && w.spent > target;
+                    const isWarning = target > 0 && !isOver && (w.spent / target) >= 0.85;
+
+                    return (
+                      <div 
+                        key={w.id}
+                        className={`p-2.5 rounded-xl border transition-all relative overflow-hidden ${
+                          w.isCurrent 
+                            ? "bg-emerald-50/50 border-emerald-300 ring-2 ring-emerald-500/10 shadow-xs" 
+                            : "bg-gray-50/60 border-gray-100"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold text-gray-800 flex items-center gap-1">
+                            {w.label}
+                            {w.isCurrent && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Minggu Berjalan" />
+                            )}
+                          </span>
+                          <span className="text-[9px] text-gray-400 font-medium">Tgl {w.range}</span>
+                        </div>
+
+                        <p className={`text-xs font-extrabold mt-0.5 ${isOver ? "text-red-500" : isWarning ? "text-amber-600" : "text-gray-900"}`}>
+                          Rp {w.spent.toLocaleString("id-ID")}
+                        </p>
+
+                        <div className="flex justify-between items-center mt-1">
+                          <span className="text-[8px] text-gray-400 font-medium">
+                            Limit: {target > 0 ? `Rp ${target.toLocaleString("id-ID")}` : "-"}
+                          </span>
+                          {target > initialWeeklyLimit && w.id >= currentWeekIndex && (
+                            <span className="text-[7px] text-emerald-600 font-bold bg-emerald-100/60 px-1 rounded">
+                              +Bonus
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Progress Bar Mini */}
+                        <div className="w-full h-1.5 bg-gray-200/80 rounded-full overflow-hidden mt-1">
+                          <div
+                            style={{ width: `${target > 0 ? pct : 0}%` }}
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              isOver ? "bg-red-500" : isWarning ? "bg-amber-500" : "bg-emerald-500"
+                            }`}
+                          />
+                        </div>
+
+                        {w.isCurrent && (
+                          <span className="mt-1 block text-[8px] font-extrabold text-emerald-600 tracking-tight uppercase">
+                            Minggu Ini
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Category Budgets - Show ALL categories with spending */}
               {(() => {
