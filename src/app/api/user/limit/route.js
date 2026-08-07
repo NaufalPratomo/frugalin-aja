@@ -20,7 +20,10 @@ export async function GET() {
       return NextResponse.json({ message: "User tidak ditemukan" }, { status: 404 });
     }
 
-    return NextResponse.json({ monthlyLimit: user.monthlyLimit || 0 }, { status: 200 });
+    return NextResponse.json({ 
+      monthlyLimit: user.monthlyLimit || 0,
+      budgetMode: user.budgetMode || 'ADAPTIVE'
+    }, { status: 200 });
   } catch (error) {
     return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
   }
@@ -34,14 +37,19 @@ export async function PUT(req) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const { monthlyLimit } = await req.json();
+    const { monthlyLimit, budgetMode } = await req.json();
 
     await dbConnect();
     
+    const updateData = { monthlyLimit: Number(monthlyLimit) };
+    if (budgetMode && ['ADAPTIVE', 'STRICT'].includes(budgetMode)) {
+      updateData.budgetMode = budgetMode;
+    }
+
     // PERBAIKAN LOGIKA: Perbarui data user berdasarkan email sesi yang valid
     const user = await User.findOneAndUpdate(
       { email: session.user.email },
-      { monthlyLimit: Number(monthlyLimit) },
+      updateData,
       { new: true }
     );
 
@@ -49,7 +57,10 @@ export async function PUT(req) {
       return NextResponse.json({ message: "User tidak ditemukan" }, { status: 404 });
     }
 
-    return NextResponse.json({ monthlyLimit: user.monthlyLimit }, { status: 200 });
+    return NextResponse.json({ 
+      monthlyLimit: user.monthlyLimit,
+      budgetMode: user.budgetMode || 'ADAPTIVE'
+    }, { status: 200 });
   } catch (error) {
     return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
   }

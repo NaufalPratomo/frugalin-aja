@@ -273,6 +273,7 @@ export default function DashboardPage() {
   const [hasMoreTx, setHasMoreTx] = useState<boolean>(true);
   const [filterType, setFilterType] = useState<string>("ALL");
   const [monthlyLimit, setMonthlyLimit] = useState<number>(0);
+  const [budgetMode, setBudgetMode] = useState<'ADAPTIVE' | 'STRICT'>('ADAPTIVE');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [activeChartTab, setActiveChartTab] = useState<'flow' | 'assets'>('flow');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -417,9 +418,11 @@ export default function DashboardPage() {
       if (dataLimit && typeof dataLimit.monthlyLimit === "number") {
         setMonthlyLimit(dataLimit.monthlyLimit);
         setNewLimitValue(dataLimit.monthlyLimit.toString());
+        if (dataLimit.budgetMode) setBudgetMode(dataLimit.budgetMode);
       } else if (dataLimit && dataLimit.monthlyLimit !== undefined) {
         setMonthlyLimit(Number(dataLimit.monthlyLimit));
         setNewLimitValue(dataLimit.monthlyLimit.toString());
+        if (dataLimit.budgetMode) setBudgetMode(dataLimit.budgetMode);
       }
 
       // Ambil data tagihan berulang
@@ -979,6 +982,22 @@ export default function DashboardPage() {
     }
   };
 
+  const handleModeToggle = async (newMode: 'ADAPTIVE' | 'STRICT') => {
+    setBudgetMode(newMode);
+    try {
+      const res = await fetch("/api/user/limit", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyLimit, budgetMode: newMode })
+      });
+      if (res.ok) {
+        showToast(`Mode budget diubah ke: ${newMode === 'ADAPTIVE' ? 'Adaptif (Carry-Over)' : 'Strict Flat (25%)'}`, "success");
+      }
+    } catch (e) {
+      console.error("Gagal memperbarui mode budget", e);
+    }
+  };
+
   const handleUpdateLimit = async (e: React.FormEvent) => {
     e.preventDefault();
     showToast("Menyimpan batas anggaran...", "info");
@@ -986,7 +1005,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/user/limit", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ monthlyLimit: Number(newLimitValue) })
+        body: JSON.stringify({ monthlyLimit: Number(newLimitValue), budgetMode })
       });
       
       if (res.ok) {
@@ -1057,6 +1076,8 @@ export default function DashboardPage() {
     ? Math.round(Math.max(0, monthlyLimit - pastWeeksSpentBeforeCurrent) / weeksLeftFromCurrent)
     : 0;
 
+  const isStrict = budgetMode === 'STRICT';
+
   const weeklyBreakdown = [
     {
       id: 1,
@@ -1064,7 +1085,7 @@ export default function DashboardPage() {
       range: "1-7",
       isCurrent: currentWeekIndex === 1,
       spent: w1Spent,
-      targetLimit: currentWeekIndex === 1 ? currentWeekTargetLimit : initialWeeklyLimit,
+      targetLimit: isStrict ? initialWeeklyLimit : (currentWeekIndex === 1 ? currentWeekTargetLimit : initialWeeklyLimit),
     },
     {
       id: 2,
@@ -1072,7 +1093,7 @@ export default function DashboardPage() {
       range: "8-14",
       isCurrent: currentWeekIndex === 2,
       spent: w2Spent,
-      targetLimit: currentWeekIndex === 2 ? currentWeekTargetLimit : currentWeekIndex > 2 ? initialWeeklyLimit : futureWeeklyLimit,
+      targetLimit: isStrict ? initialWeeklyLimit : (currentWeekIndex === 2 ? currentWeekTargetLimit : currentWeekIndex > 2 ? initialWeeklyLimit : futureWeeklyLimit),
     },
     {
       id: 3,
@@ -1080,7 +1101,7 @@ export default function DashboardPage() {
       range: "15-21",
       isCurrent: currentWeekIndex === 3,
       spent: w3Spent,
-      targetLimit: currentWeekIndex === 3 ? currentWeekTargetLimit : currentWeekIndex > 3 ? initialWeeklyLimit : futureWeeklyLimit,
+      targetLimit: isStrict ? initialWeeklyLimit : (currentWeekIndex === 3 ? currentWeekTargetLimit : currentWeekIndex > 3 ? initialWeeklyLimit : futureWeeklyLimit),
     },
     {
       id: 4,
@@ -1088,13 +1109,21 @@ export default function DashboardPage() {
       range: "22+",
       isCurrent: currentWeekIndex === 4,
       spent: w4Spent,
-      targetLimit: currentWeekIndex === 4 ? currentWeekTargetLimit : futureWeeklyLimit,
+      targetLimit: isStrict ? initialWeeklyLimit : (currentWeekIndex === 4 ? currentWeekTargetLimit : futureWeeklyLimit),
     },
   ];
 
   const activeWeekData = weeklyBreakdown.find(w => w.isCurrent) || weeklyBreakdown[0];
   const activeWeekTarget = activeWeekData.targetLimit || initialWeeklyLimit;
   const activeWeekPct = activeWeekTarget > 0 ? (activeWeekData.spent / activeWeekTarget) * 100 : 0;
+
+  // LOGIKA PROYEKSI PENGELUARAN AKHIR BULAN (Month-End Forecasting)
+  const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const daysPassed = currentDate;
+  const dailyBurnRate = daysPassed > 0 ? Math.round(totalMonthlyExpense / daysPassed) : 0;
+  const projectedMonthEndExpense = Math.round(dailyBurnRate * daysInCurrentMonth);
+  const isProjectedOverLimit = monthlyLimit > 0 && projectedMonthEndExpense > monthlyLimit;
+  const projectionDiff = monthlyLimit > 0 ? Math.abs(projectedMonthEndExpense - monthlyLimit) : 0;
 
   const filteredTransactions = historyTransactions.filter(tx => {
     if (filterType === "ALL") return true;
@@ -1678,24 +1707,49 @@ export default function DashboardPage() {
 
               {/* INDIKATOR PENGELUARAN PER MINGGU */}
               <div className="mt-4 pt-3.5 border-t border-gray-100">
-                <div className="flex flex-wrap justify-between items-center mb-2.5 gap-1">
+                <div className="flex flex-wrap justify-between items-center mb-2.5 gap-2">
                   <div className="flex items-center gap-1.5">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-600">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5" />
                     </svg>
                     <span className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
-                      Indikator Mingguan (Limit Adaptif)
+                      Indikator Mingguan ({budgetMode === 'ADAPTIVE' ? 'Limit Adaptif' : 'Strict Flat 25%'})
                     </span>
                   </div>
-                  {monthlyLimit > 0 && (
-                    <span className="text-[9px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-100">
-                      {futureWeeklyLimit > initialWeeklyLimit 
-                        ? `Target Sisa Minggu: Rp ${futureWeeklyLimit.toLocaleString("id-ID")}/mg (+Bonus Hemat)` 
-                        : futureWeeklyLimit < initialWeeklyLimit 
-                        ? `Target Sisa Minggu: Rp ${futureWeeklyLimit.toLocaleString("id-ID")}/mg (Disesuaikan)`
-                        : `Target Standard: Rp ${initialWeeklyLimit.toLocaleString("id-ID")}/mg`}
-                    </span>
-                  )}
+
+                  {/* Mode Switcher Tabs */}
+                  <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
+                    <button 
+                      type="button"
+                      onClick={() => handleModeToggle('ADAPTIVE')}
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                        budgetMode === 'ADAPTIVE' 
+                          ? "bg-white text-emerald-700 shadow-xs border border-gray-200" 
+                          : "text-gray-500 hover:text-gray-800"
+                      }`}
+                      title="Sisa budget dialokasikan ke minggu berikutnya"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3 text-emerald-600">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                      </svg>
+                      <span>Adaptif</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => handleModeToggle('STRICT')}
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                        budgetMode === 'STRICT' 
+                          ? "bg-white text-gray-900 shadow-xs border border-gray-200" 
+                          : "text-gray-500 hover:text-gray-800"
+                      }`}
+                      title="Batas tiap minggu dikunci rata (25% per minggu)"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3 text-gray-600">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                      </svg>
+                      <span>Strict Flat</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1732,7 +1786,7 @@ export default function DashboardPage() {
                           <span className="text-[8px] text-gray-400 font-medium">
                             Limit: {target > 0 ? `Rp ${target.toLocaleString("id-ID")}` : "-"}
                           </span>
-                          {target > initialWeeklyLimit && w.id >= currentWeekIndex && (
+                          {!isStrict && target > initialWeeklyLimit && w.id >= currentWeekIndex && (
                             <span className="text-[7px] text-emerald-600 font-bold bg-emerald-100/60 px-1 rounded">
                               +Bonus
                             </span>
@@ -1758,6 +1812,57 @@ export default function DashboardPage() {
                     );
                   })}
                 </div>
+
+                {/* PROYEKSI PENGELUARAN AKHIR BULAN (Forecasting Card) */}
+                {monthlyLimit > 0 && totalMonthlyExpense > 0 && (
+                  <div className={`mt-3 p-3 rounded-2xl border transition-all ${
+                    isProjectedOverLimit 
+                      ? "bg-red-50/50 border-red-200 text-red-950" 
+                      : "bg-emerald-50/50 border-emerald-200 text-emerald-950"
+                  }`}>
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-gray-600">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 0 5.814-5.518l2.74-1.22m0 0-3.976-1.536m3.976 1.536-1.536 3.976" />
+                        </svg>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-700">
+                          Proyeksi Akhir Bulan (Forecasting)
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-bold text-gray-600 bg-white/90 px-2 py-0.5 rounded-md border border-gray-200 shadow-2xs">
+                        Laju: Rp {dailyBurnRate.toLocaleString("id-ID")}/hari
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-baseline mt-1.5">
+                      <div>
+                        <p className="text-xs font-black text-gray-900">
+                          Estimasi Total: Rp {projectedMonthEndExpense.toLocaleString("id-ID")}
+                        </p>
+                        <p className="text-[10px] font-semibold mt-0.5 flex items-center gap-1">
+                          {isProjectedOverLimit ? (
+                            <span className="text-red-600 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-red-500 flex-shrink-0">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                              </svg>
+                              <span>Berpotensi melampaui limit bulanan sebesar <span className="font-extrabold">+Rp {projectionDiff.toLocaleString("id-ID")}</span></span>
+                            </span>
+                          ) : (
+                            <span className="text-emerald-700 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-emerald-600 flex-shrink-0">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+                              </svg>
+                              <span>Laju sangat baik! Diproyeksikan sisa/hemat <span className="font-extrabold">Rp {projectionDiff.toLocaleString("id-ID")}</span></span>
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <span className="text-[9px] text-gray-400 font-semibold flex-shrink-0">
+                        {daysPassed}/{daysInCurrentMonth} Hari Berlalu
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Category Budgets - Show ALL categories with spending */}
@@ -2488,6 +2593,46 @@ export default function DashboardPage() {
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Batas Pengeluaran Bulanan (Rp)</label>
                 <input required type="number" placeholder="Masukkan batas nominal" value={newLimitValue} onChange={e => setNewLimitValue(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold focus:outline-none focus:border-green-500 text-black" />
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-gray-600">Mode Pengalokasian Mingguan</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button 
+                    type="button" 
+                    onClick={() => setBudgetMode('ADAPTIVE')}
+                    className={`p-2 rounded-xl border text-left cursor-pointer transition-all ${
+                      budgetMode === 'ADAPTIVE' 
+                        ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold" 
+                        : "bg-gray-50 border-gray-100 text-gray-600"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-600">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                      </svg>
+                      <span>Adaptif</span>
+                    </div>
+                    <p className="text-[9px] text-gray-500 mt-0.5 font-normal">Sisa budget otomatis dialokasikan ke minggu berikutnya</p>
+                  </button>
+
+                  <button 
+                    type="button" 
+                    onClick={() => setBudgetMode('STRICT')}
+                    className={`p-2 rounded-xl border text-left cursor-pointer transition-all ${
+                      budgetMode === 'STRICT' 
+                        ? "bg-gray-900 border-gray-900 text-white font-bold" 
+                        : "bg-gray-50 border-gray-100 text-gray-600"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3.5 h-3.5 ${budgetMode === 'STRICT' ? 'text-white' : 'text-gray-600'}`}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                      </svg>
+                      <span>Strict Flat</span>
+                    </div>
+                    <p className={`text-[9px] mt-0.5 font-normal ${budgetMode === 'STRICT' ? 'text-gray-300' : 'text-gray-500'}`}>Batas tiap minggu dikunci rata (25% per minggu)</p>
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setShowLimitModal(false)} className="flex-1 bg-gray-100 py-2.5 rounded-lg font-bold cursor-pointer">Batal</button>
