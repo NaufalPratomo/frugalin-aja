@@ -73,7 +73,10 @@ export async function POST(req) {
       return NextResponse.json({ message: "Akun bank asal tidak ditemukan" }, { status: 404 });
     }
 
-    const transactionAmount = Number(amount);
+    const transactionAmount = Math.round(Number(amount));
+    if (isNaN(transactionAmount) || transactionAmount <= 0) {
+      return NextResponse.json({ message: "Nominal transaksi tidak valid" }, { status: 400 });
+    }
     let newTransaction;
 
     if (type === "TRANSFER") {

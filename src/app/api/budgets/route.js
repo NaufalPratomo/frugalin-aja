@@ -32,7 +32,7 @@ export async function POST(req) {
     // Update if exists, otherwise create
     const budget = await Budget.findOneAndUpdate(
       { userId: session.user.id, category },
-      { limit: Number(limit) },
+      { limit: Math.round(Number(limit)) },
       { new: true, upsert: true }
     );
 
@@ -55,7 +55,7 @@ export async function PUT(req) {
     await dbConnect();
     const budget = await Budget.findOneAndUpdate(
       { _id: id, userId: session.user.id },
-      { category, limit: Number(limit) },
+      { category, limit: Math.round(Number(limit)) },
       { new: true }
     );
 

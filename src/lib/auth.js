@@ -12,12 +12,13 @@ export const authOptions = {
 
       async authorize(credentials) {
         const { email, password } = credentials;
+        const cleanEmail = email ? email.trim().toLowerCase() : "";
 
         try {
           await dbConnect();
           
           // 1. Cari user berdasarkan email
-          const user = await User.findOne({ email });
+          const user = await User.findOne({ email: cleanEmail });
           if (!user) {
             throw new Error("Email atau password salah");
           }

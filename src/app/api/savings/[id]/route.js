@@ -20,13 +20,13 @@ export async function PUT(req, { params }) {
     }
 
     if (action === "ADD_FUNDS") {
-      goal.currentAmount += Number(addAmount || 0);
+      goal.currentAmount += Math.round(Number(addAmount || 0));
     } else {
       if (name) goal.name = name;
-      if (targetAmount !== undefined) goal.targetAmount = Number(targetAmount);
-      if (currentAmount !== undefined) goal.currentAmount = Number(currentAmount);
+      if (targetAmount !== undefined) goal.targetAmount = Math.round(Number(targetAmount));
+      if (currentAmount !== undefined) goal.currentAmount = Math.round(Number(currentAmount));
       if (targetDate !== undefined) goal.targetDate = targetDate ? new Date(targetDate) : null;
-      if (monthlyContribution !== undefined) goal.monthlyContribution = Number(monthlyContribution);
+      if (monthlyContribution !== undefined) goal.monthlyContribution = Math.round(Number(monthlyContribution));
     }
 
     await goal.save();

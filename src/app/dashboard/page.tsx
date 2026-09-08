@@ -677,7 +677,7 @@ export default function DashboardPage() {
         accountId: txAccount,
         toAccountId: isTransfer ? txToAccount : undefined,
         type: txType,
-        amount: Number(txAmount),
+        amount: Math.round(Number(txAmount)),
         category: finalCategory,
         description: txDesc
       };
@@ -897,7 +897,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           accountId: ocrAccount,
           type: "EXPENSE",
-          amount: Number(ocrAmount),
+          amount: Math.round(Number(ocrAmount)),
           category: ocrCategory,
           description: ocrDesc,
           date: ocrDate ? new Date(ocrDate) : new Date()
@@ -1022,11 +1022,11 @@ export default function DashboardPage() {
 
   if (status === "loading") return <SplashScreen />;
 
-  const totalNetWorth = accounts.reduce((acc, curr) => acc + curr.balance, 0);
+  const totalNetWorth = accounts.reduce((acc, curr) => acc + Math.round(Number(curr.balance) || 0), 0);
 
   const totalMonthlyInterest = accounts
     .filter(acc => acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0)
-    .reduce((acc, curr) => acc + (curr.monthlyInterest || 0), 0);
+    .reduce((acc, curr) => acc + Math.round(Number(curr.monthlyInterest) || 0), 0);
 
   // LOGIKA HITUNG PENGELUARAN BULAN INI
   const currentMonth = new Date().getMonth();
@@ -1037,10 +1037,11 @@ export default function DashboardPage() {
       const txDate = new Date(tx.date);
       return tx.type === "EXPENSE" && txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear;
     })
-    .reduce((acc, curr) => acc + curr.amount, 0);
+    .reduce((acc, curr) => acc + Math.round(Number(curr.amount) || 0), 0);
 
   // Hitung persentase pemakaian limit budget bulanan
-  const limitPercentage = monthlyLimit > 0 ? Math.min((totalMonthlyExpense / monthlyLimit) * 100, 100) : 0;
+  const actualLimitPercentage = monthlyLimit > 0 ? (totalMonthlyExpense / monthlyLimit) * 100 : 0;
+  const limitPercentage = Math.min(actualLimitPercentage, 100);
 
   // Hitung pengeluaran per minggu dengan Penyesuaian Otomatis (Dynamic Carry-over)
   const initialWeeklyLimit = monthlyLimit > 0 ? Math.round(monthlyLimit / 4) : 0;
@@ -1052,10 +1053,10 @@ export default function DashboardPage() {
     return tx.type === "EXPENSE" && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
-  const w1Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 1 && new Date(tx.date).getDate() <= 7).reduce((sum, tx) => sum + tx.amount, 0);
-  const w2Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 8 && new Date(tx.date).getDate() <= 14).reduce((sum, tx) => sum + tx.amount, 0);
-  const w3Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 15 && new Date(tx.date).getDate() <= 21).reduce((sum, tx) => sum + tx.amount, 0);
-  const w4Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 22).reduce((sum, tx) => sum + tx.amount, 0);
+  const w1Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 1 && new Date(tx.date).getDate() <= 7).reduce((sum, tx) => sum + Math.round(Number(tx.amount) || 0), 0);
+  const w2Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 8 && new Date(tx.date).getDate() <= 14).reduce((sum, tx) => sum + Math.round(Number(tx.amount) || 0), 0);
+  const w3Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 15 && new Date(tx.date).getDate() <= 21).reduce((sum, tx) => sum + Math.round(Number(tx.amount) || 0), 0);
+  const w4Spent = currentMonthExpenseTxs.filter(tx => new Date(tx.date).getDate() >= 22).reduce((sum, tx) => sum + Math.round(Number(tx.amount) || 0), 0);
 
   const rawWeeklySpents = [w1Spent, w2Spent, w3Spent, w4Spent];
 
@@ -1149,10 +1150,11 @@ export default function DashboardPage() {
     const txDate = new Date(tx.date);
     if (txDate.getFullYear() === selectedYear) {
       const monthIndex = txDate.getMonth();
+      const cleanAmount = Math.round(Number(tx.amount) || 0);
       if (tx.type === "INCOME") {
-        monthlyIncome[monthIndex] += tx.amount;
+        monthlyIncome[monthIndex] += cleanAmount;
       } else if (tx.type === "EXPENSE") {
-        monthlyExpense[monthIndex] += tx.amount;
+        monthlyExpense[monthIndex] += cleanAmount;
       }
     }
   });
@@ -1161,7 +1163,7 @@ export default function DashboardPage() {
   const monthlyAssets = Array(12).fill(0);
   const runningBalances: Record<string, number> = {};
   accounts.forEach((acc) => {
-    runningBalances[acc._id] = acc.balance;
+    runningBalances[acc._id] = Math.round(Number(acc.balance) || 0);
   });
 
   const sortedTx = [...transactions].sort(
@@ -1186,14 +1188,15 @@ export default function DashboardPage() {
         if (txTime > endOfMonth.getTime()) {
           // Revert transaksi ini dari runningBalances
           if (runningBalances[tx.accountId] !== undefined) {
+            const cleanAmount = Math.round(Number(tx.amount) || 0);
             if (tx.type === "INCOME") {
-              runningBalances[tx.accountId] -= tx.amount;
+              runningBalances[tx.accountId] -= cleanAmount;
             } else if (tx.type === "EXPENSE") {
-              runningBalances[tx.accountId] += tx.amount;
+              runningBalances[tx.accountId] += cleanAmount;
             } else if (tx.type === "TRANSFER") {
-              runningBalances[tx.accountId] += tx.amount;
+              runningBalances[tx.accountId] += cleanAmount;
               if (tx.toAccountId && runningBalances[tx.toAccountId] !== undefined) {
-                runningBalances[tx.toAccountId] -= tx.amount;
+                runningBalances[tx.toAccountId] -= cleanAmount;
               }
             }
           }
@@ -1207,12 +1210,19 @@ export default function DashboardPage() {
     }
   }
 
+  // Format rupiah terstandar (selalu integer bulat tanpa pecahan desimal/sen)
+  const formatRupiah = (value: number) => {
+    const rounded = Math.round(Number(value) || 0);
+    return `Rp ${rounded.toLocaleString("id-ID", { maximumFractionDigits: 0 })}`;
+  };
+
   // Format rupiah pendek
   const formatRupiahShort = (value: number) => {
-    if (value >= 1_000_000_000) return `Rp ${(value / 1_000_000_000).toFixed(1)}M`;
-    if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}Jt`;
-    if (value >= 1_000) return `Rp ${(value / 1_000).toFixed(0)}Rb`;
-    return `Rp ${value}`;
+    const rounded = Math.round(Number(value) || 0);
+    if (rounded >= 1_000_000_000) return `Rp ${(rounded / 1_000_000_000).toFixed(1)}M`;
+    if (rounded >= 1_000_000) return `Rp ${(rounded / 1_000_000).toFixed(1)}Jt`;
+    if (rounded >= 1_000) return `Rp ${(rounded / 1_000).toFixed(0)}Rb`;
+    return `Rp ${rounded}`;
   };
 
   // Hitung pengeluaran per kategori bulan ini
@@ -1222,7 +1232,7 @@ export default function DashboardPage() {
       const txDate = new Date(tx.date);
       if (txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear) {
         const group = getBudgetCategoryGroup(tx.category);
-        categoryExpenses[group] = (categoryExpenses[group] || 0) + tx.amount;
+        categoryExpenses[group] = (categoryExpenses[group] || 0) + Math.round(Number(tx.amount) || 0);
       }
     }
   });
@@ -1247,10 +1257,11 @@ export default function DashboardPage() {
       const y = txDate.getFullYear();
       const cat = getBudgetCategoryGroup(tx.category);
 
+      const cleanAmount = Math.round(Number(tx.amount) || 0);
       if (m === curMonth && y === curYear) {
-        categoryTotalsCur[cat] = (categoryTotalsCur[cat] || 0) + tx.amount;
+        categoryTotalsCur[cat] = (categoryTotalsCur[cat] || 0) + cleanAmount;
       } else if (m === lastMonth && y === lastMonthYear) {
-        categoryTotalsLast[cat] = (categoryTotalsLast[cat] || 0) + tx.amount;
+        categoryTotalsLast[cat] = (categoryTotalsLast[cat] || 0) + cleanAmount;
       }
     });
 
@@ -1280,7 +1291,7 @@ export default function DashboardPage() {
       .slice(0, 3);
 
     if (weeklyExpenses.length > 0) {
-      const formattedTxs = weeklyExpenses.map(tx => `Rp ${tx.amount.toLocaleString("id-ID")} (${tx.category})`).join(", ");
+      const formattedTxs = weeklyExpenses.map(tx => `${formatRupiah(tx.amount)} (${tx.category})`).join(", ");
       insights.push(`3 transaksi terbesar minggu ini: ${formattedTxs}.`);
     }
 
@@ -1417,7 +1428,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : tx.type === "EXPENSE" ? "text-red-500" : "text-blue-600"}`}>
-                    {tx.type === "INCOME" ? "+" : tx.type === "EXPENSE" ? "-" : "⇄"} Rp {tx.amount.toLocaleString("id-ID")}
+                    {tx.type === "INCOME" ? "+" : tx.type === "EXPENSE" ? "-" : "⇄"} {formatRupiah(tx.amount)}
                   </p>
                   <button
                     onClick={() => handleDeleteTransaction(tx._id)}
@@ -1556,7 +1567,7 @@ export default function DashboardPage() {
                 <p className="text-xs opacity-75 uppercase tracking-wider font-bold">Total Aset Gabungan</p>
                 <div className="flex items-center gap-2.5 mt-1.5">
                   <h1 className="text-3xl md:text-4xl font-black tracking-tight">
-                    {showBalance ? `Rp ${totalNetWorth.toLocaleString("id-ID")}` : "Rp ••••••••"}
+                    {showBalance ? formatRupiah(totalNetWorth) : "Rp ••••••••"}
                   </h1>
                   <button 
                     onClick={() => setShowBalance(!showBalance)} 
@@ -1579,7 +1590,7 @@ export default function DashboardPage() {
               {totalMonthlyInterest > 0 && (
                 <div className="bg-red-500/20 backdrop-blur-md px-3 py-1.5 rounded-xl border border-red-500/30 text-right animate-pulse">
                   <p className="text-[9px] opacity-75 font-semibold uppercase tracking-wider">Bunga Bank Wajib / Bln</p>
-                  <p className="text-xs font-extrabold text-red-100">Rp {totalMonthlyInterest.toLocaleString("id-ID")}</p>
+                  <p className="text-xs font-extrabold text-red-100">{formatRupiah(totalMonthlyInterest)}</p>
                 </div>
               )}
             </div>
@@ -1623,12 +1634,12 @@ export default function DashboardPage() {
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-red-400 animate-pulse">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clipRule="evenodd" />
                         </svg>
-                        Bunga: Rp {acc.monthlyInterest.toLocaleString("id-ID")}/bln
+                        Bunga: {formatRupiah(acc.monthlyInterest)}/bln
                       </p>
                     ) : null}
                   </div>
                   <div className="text-right flex items-center gap-2">
-                    <p className="font-extrabold text-sm text-gray-900">Rp {acc.balance.toLocaleString("id-ID")}</p>
+                    <p className="font-extrabold text-sm text-gray-900">{formatRupiah(acc.balance)}</p>
                     <button 
                       onClick={() => {
                         setSelectedAccId(acc._id);
@@ -1682,10 +1693,10 @@ export default function DashboardPage() {
             <div className="space-y-2">
               <div className="flex justify-between items-end text-xs font-semibold">
                 <span className="text-gray-500">
-                  Terpakai: <span className="text-gray-900 font-bold">Rp {totalMonthlyExpense.toLocaleString("id-ID")}</span>
+                  Terpakai: <span className="text-gray-900 font-bold">{formatRupiah(totalMonthlyExpense)}</span>
                 </span>
                 <span className="text-gray-400">
-                  Batas: {monthlyLimit > 0 ? `Rp ${monthlyLimit.toLocaleString("id-ID")}` : "Belum ditentukan"}
+                  Batas: {monthlyLimit > 0 ? formatRupiah(monthlyLimit) : "Belum ditentukan"}
                 </span>
               </div>
               
@@ -1699,9 +1710,9 @@ export default function DashboardPage() {
                 />
               </div>
 
-              {monthlyLimit > 0 && limitPercentage >= 90 && (
+              {monthlyLimit > 0 && actualLimitPercentage >= 90 && (
                 <p className="text-[10px] text-red-500 font-bold tracking-wide animate-pulse mt-1">
-                  Peringatan: Pengeluaran bulan ini sudah mencapai {limitPercentage.toFixed(0)}% dari batas limit anggaran!
+                  Peringatan: Pengeluaran bulan ini sudah mencapai {actualLimitPercentage.toFixed(0)}% dari batas limit anggaran!
                 </p>
               )}
 
@@ -1779,12 +1790,12 @@ export default function DashboardPage() {
                         </div>
 
                         <p className={`text-xs font-extrabold mt-0.5 ${isOver ? "text-red-500" : isWarning ? "text-amber-600" : "text-gray-900"}`}>
-                          Rp {w.spent.toLocaleString("id-ID")}
+                          {formatRupiah(w.spent)}
                         </p>
 
                         <div className="flex justify-between items-center mt-1">
                           <span className="text-[8px] text-gray-400 font-medium">
-                            Limit: {target > 0 ? `Rp ${target.toLocaleString("id-ID")}` : "-"}
+                            Limit: {target > 0 ? formatRupiah(target) : "-"}
                           </span>
                           {!isStrict && target > initialWeeklyLimit && w.id >= currentWeekIndex && (
                             <span className="text-[7px] text-emerald-600 font-bold bg-emerald-100/60 px-1 rounded">
@@ -1830,14 +1841,14 @@ export default function DashboardPage() {
                         </span>
                       </div>
                       <span className="text-[9px] font-bold text-gray-600 bg-white/90 px-2 py-0.5 rounded-md border border-gray-200 shadow-2xs">
-                        Laju: Rp {dailyBurnRate.toLocaleString("id-ID")}/hari
+                        Laju: {formatRupiah(dailyBurnRate)}/hari
                       </span>
                     </div>
 
                     <div className="flex justify-between items-baseline mt-1.5">
                       <div>
                         <p className="text-xs font-black text-gray-900">
-                          Estimasi Total: Rp {projectedMonthEndExpense.toLocaleString("id-ID")}
+                          Estimasi Total: {formatRupiah(projectedMonthEndExpense)}
                         </p>
                         <p className="text-[10px] font-semibold mt-0.5 flex items-center gap-1">
                           {isProjectedOverLimit ? (
@@ -1845,14 +1856,14 @@ export default function DashboardPage() {
                               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-red-500 flex-shrink-0">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                               </svg>
-                              <span>Berpotensi melampaui limit bulanan sebesar <span className="font-extrabold">+Rp {projectionDiff.toLocaleString("id-ID")}</span></span>
+                              <span>Berpotensi melampaui limit bulanan sebesar <span className="font-extrabold">+{formatRupiah(projectionDiff)}</span></span>
                             </span>
                           ) : (
                             <span className="text-emerald-700 flex items-center gap-1">
                               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-emerald-600 flex-shrink-0">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
                               </svg>
-                              <span>Laju sangat baik! Diproyeksikan sisa/hemat <span className="font-extrabold">Rp {projectionDiff.toLocaleString("id-ID")}</span></span>
+                              <span>Laju sangat baik! Diproyeksikan sisa/hemat <span className="font-extrabold">{formatRupiah(projectionDiff)}</span></span>
                             </span>
                           )}
                         </p>
@@ -1943,7 +1954,7 @@ export default function DashboardPage() {
                                   transform="rotate(-90 50 50)"
                                   className="transition-all duration-300 hover:stroke-[10px] cursor-pointer"
                                 >
-                                  <title>{`${item.category}: Rp ${item.spent.toLocaleString("id-ID")}`}</title>
+                                  <title>{`${item.category}: ${formatRupiah(item.spent)}`}</title>
                                 </circle>
                               );
                             })}
@@ -1962,11 +1973,11 @@ export default function DashboardPage() {
                       <div className="col-span-2 space-y-3">
                         {categoryList.map(item => {
                           const hasLimit = item.budget !== null;
-                          const limit = hasLimit ? item.budget!.limit : 0;
-                          const pct = hasLimit ? Math.min((item.spent / limit) * 100, 100) : 0;
+                          const limit = hasLimit ? Math.round(Number(item.budget!.limit) || 0) : 0;
+                          const pct = hasLimit && limit > 0 ? Math.min((item.spent / limit) * 100, 100) : 0;
                           // For categories without limit, show a proportional bar relative to the highest spender
                           const maxSpent = categoryList.length > 0 ? categoryList[0].spent : 1;
-                          const proportionalPct = maxSpent > 0 ? (item.spent / maxSpent) * 100 : 0;
+                          const proportionalPct = maxSpent > 0 ? Math.min((item.spent / maxSpent) * 100, 100) : 0;
                           const color = categoryColorMap[item.category] || "#9ca3af";
 
                           return (
@@ -1978,9 +1989,9 @@ export default function DashboardPage() {
                                 </span>
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-500 font-medium">
-                                    Rp {item.spent.toLocaleString("id-ID")}
+                                    {formatRupiah(item.spent)}
                                     {hasLimit && (
-                                      <span className="text-gray-400"> / Rp {limit.toLocaleString("id-ID")}</span>
+                                      <span className="text-gray-400"> / {formatRupiah(limit)}</span>
                                     )}
                                   </span>
                                   
@@ -2305,23 +2316,23 @@ export default function DashboardPage() {
                     <div className="space-y-1 text-[10px]">
                       <p className="text-green-600 font-bold flex items-center justify-between gap-4">
                         <span>Pemasukan:</span>
-                        <span>Rp {monthlyIncome[hoveredIndex].toLocaleString("id-ID")}</span>
+                        <span>{formatRupiah(monthlyIncome[hoveredIndex])}</span>
                       </p>
                       <p className="text-red-500 font-bold flex items-center justify-between gap-4">
                         <span>Pengeluaran:</span>
-                        <span>Rp {monthlyExpense[hoveredIndex].toLocaleString("id-ID")}</span>
+                        <span>{formatRupiah(monthlyExpense[hoveredIndex])}</span>
                       </p>
                       <div className="border-t border-gray-100 my-1 pt-1" />
                       <p className={`${monthlyIncome[hoveredIndex] - monthlyExpense[hoveredIndex] >= 0 ? "text-green-700" : "text-red-600"} font-black flex items-center justify-between gap-4`}>
                         <span>Netto:</span>
-                        <span>Rp {(monthlyIncome[hoveredIndex] - monthlyExpense[hoveredIndex]).toLocaleString("id-ID")}</span>
+                        <span>{formatRupiah(monthlyIncome[hoveredIndex] - monthlyExpense[hoveredIndex])}</span>
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-1 text-[10px]">
                       <p className="text-blue-600 font-black flex items-center justify-between gap-4">
                         <span>Total Aset:</span>
-                        <span>Rp {monthlyAssets[hoveredIndex].toLocaleString("id-ID")}</span>
+                        <span>{formatRupiah(monthlyAssets[hoveredIndex])}</span>
                       </p>
                     </div>
                   )}
@@ -2447,7 +2458,7 @@ export default function DashboardPage() {
                             <p className="text-[10px] text-gray-400 mt-0.5">{bill.category} • Rekening: {linkedAccount?.name || "-"}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-extrabold text-xs text-gray-900">Rp {bill.amount.toLocaleString("id-ID")}</p>
+                            <p className="font-extrabold text-xs text-gray-900">{formatRupiah(bill.amount)}</p>
                             <p className={`text-[10px] mt-0.5 font-bold ${
                               bill.status === "PAID" 
                                 ? "text-gray-400" 
@@ -2504,7 +2515,9 @@ export default function DashboardPage() {
               
               <div className="space-y-4">
                 {savings.map((goal) => {
-                  const pct = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+                  const targetAmt = Math.round(Number(goal.targetAmount) || 0);
+                  const currentAmt = Math.round(Number(goal.currentAmount) || 0);
+                  const pct = targetAmt > 0 ? Math.min((currentAmt / targetAmt) * 100, 100) : 0;
                   
                   // Helper to estimate
                   const getGoalEstimation = (g: SavingsGoalType) => {
@@ -2513,7 +2526,7 @@ export default function DashboardPage() {
                     
                     if (g.monthlyContribution && g.monthlyContribution > 0) {
                       const months = Math.ceil(remaining / g.monthlyContribution);
-                      return `Estimasi: ${months} bulan lagi (Rp ${g.monthlyContribution.toLocaleString("id-ID")}/bln)`;
+                      return `Estimasi: ${months} bulan lagi (${formatRupiah(g.monthlyContribution)}/bln)`;
                     }
 
                     const defaultAllocatedRate = 250000;
@@ -2538,7 +2551,7 @@ export default function DashboardPage() {
                         <div className="flex justify-between text-[11px] font-bold text-gray-500 mt-2 mb-1">
                           <span>Progress: {pct.toFixed(0)}%</span>
                           <span className="text-gray-900 font-extrabold text-[11px]">
-                            Rp {goal.currentAmount.toLocaleString("id-ID")}
+                            {formatRupiah(goal.currentAmount)}
                           </span>
                         </div>
 
@@ -2681,7 +2694,7 @@ export default function DashboardPage() {
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Rekening Pembayaran Default</label>
                 <select value={billAccount} onChange={e => setBillAccount(e.target.value)} className="w-full border p-2.5 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
-                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
+                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name} ({formatRupiah(a.balance)})</option>)}
                 </select>
               </div>
               <div className="flex gap-2 pt-2">
@@ -2812,7 +2825,7 @@ export default function DashboardPage() {
                   }} 
                   className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold"
                 >
-                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
+                  {accounts.map(a => <option key={a._id} value={a._id}>{a.name} ({formatRupiah(a.balance)})</option>)}
                 </select>
               </div>
               <div>
@@ -2829,7 +2842,7 @@ export default function DashboardPage() {
                   <label className="block mb-1 font-semibold text-gray-600">Rekening Tujuan</label>
                   <select value={txToAccount} onChange={e => setTxToAccount(e.target.value)} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-semibold">
                     {accounts.filter(a => a._id !== txAccount).map(a => (
-                      <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>
+                      <option key={a._id} value={a._id}>{a.name} ({formatRupiah(a.balance)})</option>
                     ))}
                   </select>
                 </div>
@@ -2840,7 +2853,7 @@ export default function DashboardPage() {
                 <input required type="number" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-extrabold text-sm" />
                 {txAmount && Number(txAmount) > 0 && (
                   <p className="text-[10px] text-emerald-600 font-bold mt-1 tracking-wide">
-                    Terformat: Rp {Number(txAmount).toLocaleString("id-ID")}
+                    Terformat: {formatRupiah(Number(txAmount))}
                   </p>
                 )}
               </div>
@@ -3024,7 +3037,7 @@ export default function DashboardPage() {
                       </div>
                       {ocrAmount && (
                         <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-                          Terformat: Rp {Number(ocrAmount).toLocaleString("id-ID")}
+                          Terformat: {formatRupiah(Number(ocrAmount))}
                         </p>
                       )}
                     </div>
@@ -3038,7 +3051,7 @@ export default function DashboardPage() {
                         onChange={e => setOcrAccount(e.target.value)} 
                         className="w-full border p-2.5 rounded-xl bg-white text-black text-xs font-semibold focus:outline-none focus:border-green-500"
                       >
-                        {accounts.map(a => <option key={a._id} value={a._id}>{a.name} (Rp {a.balance.toLocaleString("id-ID")})</option>)}
+                        {accounts.map(a => <option key={a._id} value={a._id}>{a.name} ({formatRupiah(a.balance)})</option>)}
                       </select>
                     </div>
 

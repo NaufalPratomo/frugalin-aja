@@ -31,10 +31,10 @@ export async function POST(req) {
     const newGoal = await SavingsGoal.create({
       userId: session.user.id,
       name,
-      targetAmount: Number(targetAmount),
-      currentAmount: Number(currentAmount || 0),
+      targetAmount: Math.round(Number(targetAmount)),
+      currentAmount: Math.round(Number(currentAmount || 0)),
       targetDate: targetDate ? new Date(targetDate) : undefined,
-      monthlyContribution: Number(monthlyContribution || 0)
+      monthlyContribution: Math.round(Number(monthlyContribution || 0))
     });
 
     return NextResponse.json(newGoal, { status: 201 });

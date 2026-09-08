@@ -11,10 +11,12 @@ export async function POST(req) {
       return NextResponse.json({ message: "Semua field harus diisi" }, { status: 400 });
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+
     await dbConnect();
 
     // Cek apakah email sudah terdaftar
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: cleanEmail });
     if (userExists) {
       return NextResponse.json({ message: "Email sudah terdaftar" }, { status: 400 });
     }
@@ -24,8 +26,8 @@ export async function POST(req) {
 
     // Simpan user baru
     const newUser = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: cleanEmail,
       password: hashedPassword,
     });
 

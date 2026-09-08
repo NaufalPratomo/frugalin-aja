@@ -56,9 +56,9 @@ export async function PUT(req, { params }) {
     } else {
       // Update biasa
       if (name) bill.name = name;
-      if (amount) bill.amount = Number(amount);
+      if (amount !== undefined) bill.amount = Math.round(Number(amount));
       if (category) bill.category = category;
-      if (dueDate) bill.dueDate = Number(dueDate);
+      if (dueDate !== undefined) bill.dueDate = Math.min(31, Math.max(1, Math.round(Number(dueDate))));
       if (accountId) bill.accountId = new mongoose.Types.ObjectId(accountId);
 
       await bill.save();

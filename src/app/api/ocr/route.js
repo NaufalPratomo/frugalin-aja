@@ -68,6 +68,9 @@ export async function POST(req) {
     }
 
     const parsedResult = JSON.parse(resultText.trim());
+    if (parsedResult && parsedResult.amount !== undefined) {
+      parsedResult.amount = Math.round(Number(parsedResult.amount)) || 0;
+    }
     return NextResponse.json(parsedResult);
   } catch (error) {
     console.error("OCR API route error:", error);

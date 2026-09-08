@@ -51,14 +51,19 @@ export async function POST(req) {
       return NextResponse.json({ message: "Field wajib tidak boleh kosong" }, { status: 400 });
     }
 
+    const billAmount = Math.round(Number(amount));
+    if (isNaN(billAmount) || billAmount <= 0) {
+      return NextResponse.json({ message: "Nominal tagihan tidak valid" }, { status: 400 });
+    }
+
     await dbConnect();
 
     const newBill = await Bill.create({
       userId: session.user.id,
       name,
-      amount: Number(amount),
+      amount: billAmount,
       category,
-      dueDate: Number(dueDate),
+      dueDate: Math.min(31, Math.max(1, Math.round(Number(dueDate)))),
       accountId: new mongoose.Types.ObjectId(accountId),
       status: "UNPAID"
     });

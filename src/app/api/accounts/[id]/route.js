@@ -20,8 +20,8 @@ export async function PUT(req, { params }) {
     await dbConnect();
     
     const updateData = {};
-    if (balance !== undefined) updateData.balance = Number(balance);
-    if (monthlyInterest !== undefined) updateData.monthlyInterest = Number(monthlyInterest);
+    if (balance !== undefined) updateData.balance = Math.round(Number(balance));
+    if (monthlyInterest !== undefined) updateData.monthlyInterest = Math.round(Number(monthlyInterest));
 
     // Cari akun dan pastikan milik user yang sedang login
     const account = await Account.findOneAndUpdate(

@@ -15,7 +15,8 @@ export async function GET() {
     await dbConnect();
     
     // PERBAIKAN LOGIKA: Cari user berdasarkan email sesi yang valid
-    const user = await User.findOne({ email: session.user.email });
+    const cleanEmail = session.user.email.trim().toLowerCase();
+    const user = await User.findOne({ email: cleanEmail });
     if (!user) {
       return NextResponse.json({ message: "User tidak ditemukan" }, { status: 404 });
     }
@@ -41,14 +42,15 @@ export async function PUT(req) {
 
     await dbConnect();
     
-    const updateData = { monthlyLimit: Number(monthlyLimit) };
+    const updateData = { monthlyLimit: Math.round(Number(monthlyLimit)) || 0 };
     if (budgetMode && ['ADAPTIVE', 'STRICT'].includes(budgetMode)) {
       updateData.budgetMode = budgetMode;
     }
 
     // PERBAIKAN LOGIKA: Perbarui data user berdasarkan email sesi yang valid
+    const cleanEmail = session.user.email.trim().toLowerCase();
     const user = await User.findOneAndUpdate(
-      { email: session.user.email },
+      { email: cleanEmail },
       updateData,
       { new: true }
     );

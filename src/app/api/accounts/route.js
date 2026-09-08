@@ -88,8 +88,8 @@ export async function POST(req) {
       userId: session.user.id,
       name,
       type,
-      balance: balance || 0,
-      monthlyInterest: type === 'BANK' ? (Number(monthlyInterest) || 0) : 0
+      balance: Math.round(Number(balance) || 0),
+      monthlyInterest: type === 'BANK' ? Math.round(Number(monthlyInterest) || 0) : 0
     });
 
     return NextResponse.json(newAccount, { status: 201 });

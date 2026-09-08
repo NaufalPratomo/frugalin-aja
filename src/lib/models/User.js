@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
   monthlyLimit: { type: Number, default: 0 },
   budgetMode: { type: String, enum: ['ADAPTIVE', 'STRICT'], default: 'ADAPTIVE' }
