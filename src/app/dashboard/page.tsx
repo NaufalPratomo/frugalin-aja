@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useToast } from "../../components/Toast";
 import SplashScreen from "../../components/SplashScreen";
+import { getBudgetCategoryGroup, getIncomeCategoryGroup, CATEGORIES, INCOME_CATEGORIES } from "../../lib/categorizer";
 
 interface AccountType {
   _id: string;
@@ -226,37 +227,6 @@ function parseReceiptText(text: string) {
     description: detectedDescription,
     date: detectedDate
   };
-}
-
-function getBudgetCategoryGroup(category: string): string {
-  if (!category) return "Lainnya";
-  const cat = category.toLowerCase().trim();
-  
-  if (/makan|minum|kopi|cafe|resto|warung|food|beverage|coffe|coffee|teh|chicken|burger|pizza|kuliner|dapur|roti|bakery|gofood|grabfood|shopeefood|nasi|ayam|sate|soto|gudeg|rawon|pecel|lalapan|jus|es\s|snack|cemilan|gorengan|kue|jajan|kantin|catering|bakso|mie|indomie|noodle|steak|sushi|ramen|boba|bubble|dimsum|seafood|ikan|daging|sayur|buah|salad|dessert|ice\s*cream|gelato|donat|martabak|kebab|shawarma|pempek|siomay|batagor|seblak|cilok|cimol|sempol|ricebowl|rice\s*bowl/i.test(cat)) {
-    return "Makanan & Minuman";
-  }
-  
-  if (/transport|bensin|pertamina|spbu|shell|gojek|grab|uber|ojek|taxi|taksi|tol|parkir|tiket|kereta|pesawat|travel|krl|mrt|goride|grabcab|gocar|motor|mobil|ban|oli|servis|service|bengkel|shock|breaker|sparepart|spare\s*part|knalpot|aki|radiator|kampas|rem|kopling|rantai|helm|otomotif|cuci\s*mobil|cuci\s*motor|tune\s*up|ganti\s*oli|velg|kaca|wiper|lampu\s*mobil|lampu\s*motor|body\s*repair|ketok\s*magic|derek|onderdil|variasi|modifikasi|angkot|bus|busway|transjakarta|damri|kapal|ferry|ojol|maxim|indriver|stnk|pajak\s*kendaraan|sim|perpanjang/i.test(cat)) {
-    return "Transportasi";
-  }
-  
-  if (/belanja|harian|mart|indo|alfa|super|pasar|hiper|shop|store|sabun|odol|detergen|susu|sembako|minyak|beras|trans|carefour|lotte|baju|celana|sepatu|fashion|mall|toko|laundry|dry\s*clean|alat|peralatan|elektronik|hp|handphone|gadget|furniture|rumah\s*tangga|gas|lpg|galon|tissue|shampo|shampoo|kondisioner|parfum|kosmetik|makeup|skincare|perawatan|sandal|tas|dompet|jam\s*tangan|aksesoris|kacamata|kaos|jaket|hoodie|kemeja|batik|mukena|sarung|perlengkapan|atk|alat\s*tulis|print|fotocopy|pulpen/i.test(cat)) {
-    return "Belanja & Harian";
-  }
-  
-  if (/tagihan|pulsa|wifi|internet|netflix|spotify|youtube|disney|listrik|token|bpjs|pdam|langganan|subscription|cicilan|kredit|angsuran|pinjaman|sewa|kos|kost|kontrakan|indihome|telkomsel|xl|axis|tri|smartfren|iuran|pajak|asuransi|premi|kartu\s*kredit|gopay|ovo|dana|shopeepay|top\s*up|topup|e-money|emoney|e-toll|etoll|paket\s*data|kuota|hosting|domain|cloud|vps|apple|icloud|google\s*one/i.test(cat)) {
-    return "Tagihan & Pulsa";
-  }
-
-  if (/sehat|sakit|dokter|obat|rs|rumah\s*sakit|klinik|apotek|vitamin|gym|fitness|olahraga|supplement|suplemen|check\s*up|checkup|medical|lab|laboratorium|rontgen|usg|rawat|operasi|gigi|mata|tht|kulit|psikolog|terapi|fisioterapi|vaksin|imunisasi|pijat|massage|herbal|farmasi/i.test(cat)) {
-    return "Kesehatan";
-  }
-
-  if (/hiburan|rekreasi|nonton|bioskop|travel|hotel|liburan|game|topup\s*game|playstation|wisata|piknik|camping|renang|kolam|taman|pantai|gunung|villa|resort|airbnb|konser|musik|festival|karaoke|bowling|billiard|escape\s*room|theme\s*park|dufan|ancol|waterpark|tiket\s*masuk|zoo|kebun\s*binatang|museum|cinema|cgv|xxi|imax|steam|ps5|ps4|nintendo|xbox|mobile\s*legend|free\s*fire|valorant|manga|komik|buku|novel|mainan|hobi|fotografi|kamera/i.test(cat)) {
-    return "Hiburan & Rekreasi";
-  }
-
-  return "Lainnya";
 }
 
 export default function DashboardPage() {
@@ -604,7 +574,7 @@ export default function DashboardPage() {
     }
   };
 
-  // AI fallback categorizer — called with debounce when description changes
+  // AI & Local categorizer — otomatis menyetel kategori ketika keterangan diketik
   useEffect(() => {
     if (!txDesc || txType === "TRANSFER") {
       setAiCategory(null);
@@ -612,15 +582,24 @@ export default function DashboardPage() {
       return;
     }
 
-    const regexCategory = getBudgetCategoryGroup(txDesc);
-    if (regexCategory !== "Lainnya") {
-      // Regex detected a known category — no need for AI
+    if (txType === "INCOME") {
+      const incCat = getIncomeCategoryGroup(txDesc);
+      setTxCategory(incCat);
       setAiCategory(null);
       setAiCategoryLoading(false);
       return;
     }
 
-    // Regex returned "Lainnya" — ask AI to confirm
+    const localCat = getBudgetCategoryGroup(txDesc);
+    if (localCat !== "Lainnya") {
+      // Ditemukan seketika lewat kata kunci lokal
+      setAiCategory(null);
+      setAiCategoryLoading(false);
+      setTxCategory(localCat);
+      return;
+    }
+
+    // Jika kata kunci lokal mengembalikan "Lainnya", tanyakan ke AI (Gemini) dengan debounce 400ms
     setAiCategoryLoading(true);
     if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
 
@@ -632,25 +611,22 @@ export default function DashboardPage() {
           body: JSON.stringify({ description: txDesc }),
         });
         const data = await res.json();
-        setAiCategory(data.category || "Lainnya");
+        const aiCat = data.category || "Lainnya";
+        setAiCategory(aiCat);
+        if (aiCat !== "Lainnya") {
+          setTxCategory(aiCat);
+        }
       } catch {
         setAiCategory("Lainnya");
       } finally {
         setAiCategoryLoading(false);
       }
-    }, 3000);
+    }, 400);
 
     return () => {
       if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
     };
   }, [txDesc, txType]);
-
-  // Resolve final category: regex first, then AI fallback
-  const resolveCategory = (desc: string): string => {
-    const regexResult = getBudgetCategoryGroup(desc || "Lainnya");
-    if (regexResult !== "Lainnya") return regexResult;
-    return aiCategory || "Lainnya";
-  };
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -662,15 +638,10 @@ export default function DashboardPage() {
         return;
       }
 
-      // Use AI category if regex returned Lainnya and AI has a better answer
+      // Gunakan kategori yang dipilih pengguna atau terdeteksi sistem
       let finalCategory = "Transfer";
       if (!isTransfer) {
-        const regexCat = getBudgetCategoryGroup(txDesc || "Lainnya");
-        if (regexCat === "Lainnya" && aiCategory && aiCategory !== "Lainnya") {
-          finalCategory = aiCategory;
-        } else {
-          finalCategory = regexCat;
-        }
+        finalCategory = txCategory || (txType === "INCOME" ? "Gaji & Pendapatan" : "Belanja & Harian");
       }
 
       const payload = {
@@ -2830,7 +2801,22 @@ export default function DashboardPage() {
               </div>
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Jenis Aktivitas</label>
-                <select value={txType} onChange={e => { setTxType(e.target.value); if(e.target.value === "TRANSFER" && accounts.length > 1) { const other = accounts.find(a => a._id !== txAccount); if(other) setTxToAccount(other._id); } }} className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-bold">
+                <select 
+                  value={txType} 
+                  onChange={e => { 
+                    const nextType = e.target.value;
+                    setTxType(nextType); 
+                    if(nextType === "TRANSFER" && accounts.length > 1) { 
+                      const other = accounts.find(a => a._id !== txAccount); 
+                      if(other) setTxToAccount(other._id); 
+                    } else if (nextType === "INCOME") {
+                      setTxCategory("Gaji & Pendapatan");
+                    } else if (nextType === "EXPENSE") {
+                      setTxCategory(getBudgetCategoryGroup(txDesc) || "Makanan & Minuman");
+                    }
+                  }} 
+                  className="w-full border p-2 rounded-lg bg-white text-black focus:outline-none focus:border-green-500 font-bold"
+                >
                   <option value="EXPENSE">PENGELUARAN (-)</option>
                   <option value="INCOME">PEMASUKAN (+)</option>
                   <option value="TRANSFER">TRANSFER (PINDAH SALDO)</option>
@@ -2850,7 +2836,7 @@ export default function DashboardPage() {
 
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Nominal (Rp)</label>
-                <input required type="number" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-extrabold text-sm" />
+                <input required type="number" min="1" step="1" placeholder="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} className="w-full border p-2.5 rounded-lg focus:outline-none focus:border-green-500 text-black font-extrabold text-sm" />
                 {txAmount && Number(txAmount) > 0 && (
                   <p className="text-[10px] text-emerald-600 font-bold mt-1 tracking-wide">
                     Terformat: {formatRupiah(Number(txAmount))}
@@ -2858,32 +2844,69 @@ export default function DashboardPage() {
                 )}
               </div>
 
-
-
               {txType !== "TRANSFER" && (
-                <div>
-                  <label className="block mb-1 font-semibold text-gray-600">Keterangan</label>
-                  <input required type="text" placeholder="Contoh: Makan siang bakso, Bensin motor, Bayar listrik" value={txDesc} onChange={e => setTxDesc(e.target.value)} className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" />
-                  {txDesc && (
-                    <p className="text-[10px] text-gray-400 mt-1.5 flex items-center gap-1">
-                      {aiCategoryLoading ? (
-                        <>
-                          <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                          <span className="animate-pulse">Mengonfirmasi ulang dengan AI...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className={`inline-block w-2 h-2 rounded-full ${
-                            getBudgetCategoryGroup(txDesc) !== "Lainnya" ? "bg-blue-400" 
-                            : aiCategory && aiCategory !== "Lainnya" ? "bg-emerald-400" 
-                            : "bg-gray-400"
-                          }`}></span>
-                          Kategori{getBudgetCategoryGroup(txDesc) === "Lainnya" && aiCategory && aiCategory !== "Lainnya" ? " (AI)" : ""}: <span className="font-bold text-gray-600">{resolveCategory(txDesc)}</span>
-                        </>
+                <>
+                  <div>
+                    <label className="block mb-1 font-semibold text-gray-600">Keterangan</label>
+                    <input 
+                      required 
+                      type="text" 
+                      placeholder={txType === "INCOME" ? "Contoh: Gaji bulanan, Bonus proyek, Penjualan toko" : "Contoh: Makan siang bakso, Gacoan, Bensin, Pulsa"} 
+                      value={txDesc} 
+                      onChange={e => setTxDesc(e.target.value)} 
+                      className="w-full border p-2 rounded-lg focus:outline-none focus:border-green-500 text-black text-xs font-semibold" 
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-gray-600 text-xs">
+                        Kategori {txType === "INCOME" ? "Pemasukan" : "Pengeluaran"}
+                      </label>
+                      {txDesc && (
+                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                          {aiCategoryLoading ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                              <span className="text-amber-600">AI mendeteksi...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span>Terdeteksi otomatis</span>
+                            </>
+                          )}
+                        </span>
                       )}
+                    </div>
+                    <select
+                      value={txCategory || (txType === "INCOME" ? "Gaji & Pendapatan" : "Makanan & Minuman")}
+                      onChange={e => setTxCategory(e.target.value)}
+                      className="w-full border p-2.5 rounded-lg bg-white text-black font-semibold text-xs focus:outline-none focus:border-green-500 cursor-pointer"
+                    >
+                      {(txType === "INCOME" ? INCOME_CATEGORIES : CATEGORIES).map(cat => (
+                        <option key={cat} value={cat}>
+                          {cat === "Makanan & Minuman" && "🍔 "}
+                          {cat === "Transportasi" && "🚗 "}
+                          {cat === "Belanja & Harian" && "🛍️ "}
+                          {cat === "Tagihan & Pulsa" && "📱 "}
+                          {cat === "Kesehatan" && "💊 "}
+                          {cat === "Hiburan & Rekreasi" && "🎮 "}
+                          {cat === "Gaji & Pendapatan" && "💰 "}
+                          {cat === "Bonus & Tunjangan" && "🎁 "}
+                          {cat === "Bisnis & Penjualan" && "📈 "}
+                          {cat === "Investasi & Dividen" && "🪙 "}
+                          {cat === "Hadiah & Cashback" && "🎉 "}
+                          {cat === "Lainnya" && "📦 "}
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Kategori otomatis disesuaikan dengan keterangan, namun Anda bebas memilih manual.
                     </p>
-                  )}
-                </div>
+                  </div>
+                </>
               )}
               {txType === "TRANSFER" && (
                 <div>

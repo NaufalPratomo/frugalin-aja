@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getBudgetCategoryGroup } from "../../../lib/categorizer";
 
 export async function POST(req) {
   try {
@@ -71,6 +72,17 @@ export async function POST(req) {
     if (parsedResult && parsedResult.amount !== undefined) {
       parsedResult.amount = Math.round(Number(parsedResult.amount)) || 0;
     }
+
+    // Perbaiki kategori jika AI OCR mengembalikan "Lainnya" atau belum cocok
+    if (parsedResult && parsedResult.description) {
+      if (!parsedResult.category || parsedResult.category === "Lainnya") {
+        const refinedCat = getBudgetCategoryGroup(parsedResult.description);
+        if (refinedCat !== "Lainnya") {
+          parsedResult.category = refinedCat;
+        }
+      }
+    }
+
     return NextResponse.json(parsedResult);
   } catch (error) {
     console.error("OCR API route error:", error);
