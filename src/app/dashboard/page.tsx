@@ -2492,7 +2492,7 @@ export default function DashboardPage() {
                   
                   // Helper to estimate
                   const getGoalEstimation = (g: SavingsGoalType) => {
-                    if (g.currentAmount >= g.targetAmount) return "Tercapai! 🎉";
+                    if (g.currentAmount >= g.targetAmount) return "Tercapai!";
                     const remaining = g.targetAmount - g.currentAmount;
                     
                     if (g.monthlyContribution && g.monthlyContribution > 0) {
@@ -2512,10 +2512,12 @@ export default function DashboardPage() {
                           <h4 className="font-extrabold text-gray-900 text-sm leading-snug">{goal.name}</h4>
                           <button
                             onClick={() => handleDeleteSavingsGoal(goal._id)}
-                            className="text-gray-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer text-xs p-1 rounded hover:bg-red-50 flex-shrink-0"
+                            className="text-gray-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer p-1 rounded hover:bg-red-50 flex-shrink-0"
                             title="Hapus Target"
                           >
-                            ✕
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
                           </button>
                         </div>
                         
@@ -2886,18 +2888,6 @@ export default function DashboardPage() {
                     >
                       {(txType === "INCOME" ? INCOME_CATEGORIES : CATEGORIES).map(cat => (
                         <option key={cat} value={cat}>
-                          {cat === "Makanan & Minuman" && "🍔 "}
-                          {cat === "Transportasi" && "🚗 "}
-                          {cat === "Belanja & Harian" && "🛍️ "}
-                          {cat === "Tagihan & Pulsa" && "📱 "}
-                          {cat === "Kesehatan" && "💊 "}
-                          {cat === "Hiburan & Rekreasi" && "🎮 "}
-                          {cat === "Gaji & Pendapatan" && "💰 "}
-                          {cat === "Bonus & Tunjangan" && "🎁 "}
-                          {cat === "Bisnis & Penjualan" && "📈 "}
-                          {cat === "Investasi & Dividen" && "🪙 "}
-                          {cat === "Hadiah & Cashback" && "🎉 "}
-                          {cat === "Lainnya" && "📦 "}
                           {cat}
                         </option>
                       ))}
@@ -3248,8 +3238,10 @@ export default function DashboardPage() {
                 <h3 className="font-extrabold text-base text-gray-900">Cara Memasang frugalin.aja</h3>
                 <p className="text-gray-400 mt-0.5 text-[10px]">Akses cepat aplikasi di HP atau laptop tanpa browser</p>
               </div>
-              <button onClick={() => setShowPwaGuideModal(false)} className="text-gray-400 hover:text-gray-700 font-bold text-sm cursor-pointer p-1">
-                ✕
+              <button onClick={() => setShowPwaGuideModal(false)} className="text-gray-400 hover:text-gray-700 cursor-pointer p-1 rounded-lg hover:bg-gray-100 transition-colors" title="Tutup">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
