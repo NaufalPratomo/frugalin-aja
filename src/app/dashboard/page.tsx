@@ -1090,10 +1090,17 @@ export default function DashboardPage() {
   const activeWeekPct = activeWeekTarget > 0 ? (activeWeekData.spent / activeWeekTarget) * 100 : 0;
 
   // LOGIKA PROYEKSI PENGELUARAN AKHIR BULAN (Month-End Forecasting)
+  // Pisahkan pengeluaran rutin/tagihan besar (seperti Kos/Tagihan) dari pengeluaran variabel harian
+  const fixedBillExpense = currentMonthExpenseTxs
+    .filter(tx => tx.category === "Tagihan & Pulsa")
+    .reduce((sum, tx) => sum + Math.round(Number(tx.amount) || 0), 0);
+  const variableExpense = Math.max(0, totalMonthlyExpense - fixedBillExpense);
+
   const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const daysPassed = currentDate;
-  const dailyBurnRate = daysPassed > 0 ? Math.round(totalMonthlyExpense / daysPassed) : 0;
-  const projectedMonthEndExpense = Math.round(dailyBurnRate * daysInCurrentMonth);
+  // Laju harian dihitung dari pengeluaran variabel harian (makan, belanja, transport), bukan tagihan kos 1x sebulan
+  const dailyBurnRate = daysPassed > 0 ? Math.round(variableExpense / daysPassed) : 0;
+  const projectedMonthEndExpense = Math.round(fixedBillExpense + (dailyBurnRate * daysInCurrentMonth));
   const isProjectedOverLimit = monthlyLimit > 0 && projectedMonthEndExpense > monthlyLimit;
   const projectionDiff = monthlyLimit > 0 ? Math.abs(projectedMonthEndExpense - monthlyLimit) : 0;
 
@@ -1773,6 +1780,11 @@ export default function DashboardPage() {
                               +Bonus
                             </span>
                           )}
+                          {!isStrict && target < initialWeeklyLimit && w.id > currentWeekIndex && (
+                            <span className="text-[7px] text-amber-700 font-bold bg-amber-100/70 px-1 rounded" title="Jatah dipotong karena overbudget minggu sebelumnya">
+                              Disesuaikan
+                            </span>
+                          )}
                         </div>
 
                         {/* Progress Bar Mini */}
@@ -1786,14 +1798,64 @@ export default function DashboardPage() {
                         </div>
 
                         {w.isCurrent && (
-                          <span className="mt-1 block text-[8px] font-extrabold text-emerald-600 tracking-tight uppercase">
-                            Minggu Ini
-                          </span>
+                          <div className="mt-1 flex items-center justify-between text-[8px]">
+                            <span className="font-extrabold text-emerald-600 tracking-tight uppercase">
+                              Minggu Ini
+                            </span>
+                            {isOver ? (
+                              <span className="text-red-500 font-extrabold">
+                                Over +{formatRupiah(w.spent - target)}
+                              </span>
+                            ) : (
+                              <span className="text-emerald-700 font-medium">
+                                Sisa {formatRupiah(target - w.spent)}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* REKOMENDASI ADAPTIF PEMAKAIAN SISA BULAN */}
+                {!isStrict && monthlyLimit > 0 && (
+                  <div className="mt-2.5 p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 text-emerald-950">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-1.5 rounded-xl bg-emerald-100 text-emerald-700 mt-0.5 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.002 6.002 0 0 0-4-5.659V5a2 2 0 1 1 4 0v2.091a6.002 6.002 0 0 0 4 5.659v5.25m-4 0h.01M9 21h6" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                            Rekomendasi Pemakaian (Limit Adaptif)
+                          </span>
+                          <span className="text-[10px] font-extrabold text-emerald-800 bg-white/90 border border-emerald-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                            Sisa Bulan Ini: {formatRupiah(remainingMonthlyBudgetRealtime)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed mt-1">
+                          {activeWeekData.spent > activeWeekTarget ? (
+                            <>
+                              Minggu {currentWeekIndex} telah melampaui limit (<span className="font-extrabold text-red-600">+{formatRupiah(activeWeekData.spent - activeWeekTarget)}</span>). 
+                              Agar total pengeluaran tidak melebihi <strong>{formatRupiah(monthlyLimit)}</strong>, sisa budget telah disesuaikan secara dinamis:
+                              <span className="block mt-1 font-extrabold text-emerald-950">
+                                👉 Jatah Minggu {Math.min(4, currentWeekIndex + 1)} s/d 4+: {formatRupiah(futureWeeklyLimit)}/minggu (sekitar {formatRupiah(Math.round(remainingMonthlyBudgetRealtime / Math.max(1, daysInCurrentMonth - daysPassed)))}/hari). Sisa Minggu 1: Rp 0 (stop jajan).
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              Pengeluaran minggu ini masih terkontrol dengan baik (tersisa <strong className="font-bold">{formatRupiah(activeWeekTarget - activeWeekData.spent)}</strong>). 
+                              Jatah aman untuk minggu berikutnya: <strong className="font-black text-emerald-950">{formatRupiah(futureWeeklyLimit)}/minggu</strong>.
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* PROYEKSI PENGELUARAN AKHIR BULAN (Forecasting Card) */}
                 {monthlyLimit > 0 && totalMonthlyExpense > 0 && (

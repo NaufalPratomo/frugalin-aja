@@ -3,7 +3,7 @@ import withPWAInit from "@ducanh2912/next-pwa";
 
 const withPWA = withPWAInit({
   dest: "public",
-  disable: false, // process.env.NODE_ENV === "development" -- we can keep false to allow testing PWA in development
+  disable: process.env.NODE_ENV === "development",
   register: true,
 });
 
