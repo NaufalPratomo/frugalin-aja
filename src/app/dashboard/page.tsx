@@ -1104,6 +1104,16 @@ export default function DashboardPage() {
   const isProjectedOverLimit = monthlyLimit > 0 && projectedMonthEndExpense > monthlyLimit;
   const projectionDiff = monthlyLimit > 0 ? Math.abs(projectedMonthEndExpense - monthlyLimit) : 0;
 
+  // KALKULASI ADAPTIF RIIL SISA HARI & DAMPAK MINGGUAN
+  const daysRemainingInMonth = Math.max(1, daysInCurrentMonth - daysPassed + 1);
+  const safeDailySpend = Math.round(remainingMonthlyBudgetRealtime / daysRemainingInMonth);
+  const endDayOfCurrentWeek = currentWeekIndex === 1 ? 7 : currentWeekIndex === 2 ? 14 : currentWeekIndex === 3 ? 21 : daysInCurrentMonth;
+  const daysRemainingInCurrentWeek = Math.max(0, endDayOfCurrentWeek - daysPassed + 1);
+  const safeSpendForRestOfCurrentWeek = safeDailySpend * daysRemainingInCurrentWeek;
+  const newWeeklyLimitIfSpent = futureWeeksCount > 0 
+    ? Math.max(0, Math.round((remainingMonthlyBudgetRealtime - safeSpendForRestOfCurrentWeek) / futureWeeksCount))
+    : 0;
+
   const filteredTransactions = historyTransactions.filter(tx => {
     if (filterType === "ALL") return true;
     const targetAccount = accounts.find(a => a._id === tx.accountId);
@@ -1696,52 +1706,47 @@ export default function DashboardPage() {
 
               {/* INDIKATOR PENGELUARAN PER MINGGU */}
               <div className="mt-4 pt-3.5 border-t border-gray-100">
-                <div className="flex flex-wrap justify-between items-center mb-2.5 gap-2">
+                <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
                   <div className="flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-600">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5" />
-                    </svg>
-                    <span className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
-                      Indikator Mingguan ({budgetMode === 'ADAPTIVE' ? 'Limit Adaptif' : 'Strict Flat 25%'})
+                    <span className="text-xs font-semibold text-gray-800">
+                      Indikator Mingguan
+                    </span>
+                    <span className="text-[11px] text-gray-400 font-normal">
+                      ({budgetMode === 'ADAPTIVE' ? 'Adaptif' : 'Flat 25%'})
                     </span>
                   </div>
 
                   {/* Mode Switcher Tabs */}
-                  <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
+                  <div className="inline-flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200/50">
                     <button 
                       type="button"
                       onClick={() => handleModeToggle('ADAPTIVE')}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      className={`text-xs font-medium px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                         budgetMode === 'ADAPTIVE' 
-                          ? "bg-white text-emerald-700 shadow-xs border border-gray-200" 
-                          : "text-gray-500 hover:text-gray-800"
+                          ? "bg-white text-emerald-800 shadow-xs" 
+                          : "text-gray-500 hover:text-gray-900"
                       }`}
                       title="Sisa budget dialokasikan ke minggu berikutnya"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3 text-emerald-600">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                      </svg>
-                      <span>Adaptif</span>
+                      Adaptif
                     </button>
                     <button 
                       type="button"
                       onClick={() => handleModeToggle('STRICT')}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      className={`text-xs font-medium px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                         budgetMode === 'STRICT' 
-                          ? "bg-white text-gray-900 shadow-xs border border-gray-200" 
-                          : "text-gray-500 hover:text-gray-800"
+                          ? "bg-white text-gray-900 shadow-xs" 
+                          : "text-gray-500 hover:text-gray-900"
                       }`}
-                      title="Batas tiap minggu dikunci rata (25% per minggu)"
+                      title="Batas tiap minggu dibagi rata 25%"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3 text-gray-600">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
-                      </svg>
-                      <span>Strict Flat</span>
+                      Strict Flat
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* Grid Kartu Mingguan */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
                   {weeklyBreakdown.map((w) => {
                     const target = w.targetLimit > 0 ? w.targetLimit : initialWeeklyLimit;
                     const pct = target > 0 ? Math.min((w.spent / target) * 100, 100) : 0;
@@ -1751,159 +1756,126 @@ export default function DashboardPage() {
                     return (
                       <div 
                         key={w.id}
-                        className={`p-2.5 rounded-xl border transition-all relative overflow-hidden ${
+                        className={`p-3 rounded-xl border transition-colors flex flex-col justify-between ${
                           w.isCurrent 
-                            ? "bg-emerald-50/50 border-emerald-300 ring-2 ring-emerald-500/10 shadow-xs" 
-                            : "bg-gray-50/60 border-gray-100"
+                            ? "bg-white border-emerald-400 ring-1 ring-emerald-400/20 shadow-xs" 
+                            : "bg-gray-50/60 border-gray-200/60"
                         }`}
                       >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-[10px] font-bold text-gray-800 flex items-center gap-1">
-                            {w.label}
-                            {w.isCurrent && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Minggu Berjalan" />
-                            )}
-                          </span>
-                          <span className="text-[9px] text-gray-400 font-medium">Tgl {w.range}</span>
+                        <div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-gray-800 flex items-center gap-1.5">
+                              {w.label}
+                              {w.isCurrent && (
+                                <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                  Minggu ini
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[10px] text-gray-400">Tgl {w.range}</span>
+                          </div>
+
+                          <p className={`text-sm font-bold tracking-tight mt-1.5 ${isOver ? "text-rose-600" : isWarning ? "text-amber-600" : "text-gray-900"}`}>
+                            {formatRupiah(w.spent)}
+                          </p>
                         </div>
 
-                        <p className={`text-xs font-extrabold mt-0.5 ${isOver ? "text-red-500" : isWarning ? "text-amber-600" : "text-gray-900"}`}>
-                          {formatRupiah(w.spent)}
-                        </p>
+                        <div className="mt-2.5 pt-1.5 border-t border-gray-100/80">
+                          {/* Progress Bar Mini */}
+                          <div className="w-full h-1 bg-gray-200/70 rounded-full overflow-hidden mb-1.5">
+                            <div
+                              style={{ width: `${target > 0 ? pct : 0}%` }}
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                isOver ? "bg-rose-500" : isWarning ? "bg-amber-500" : "bg-emerald-600"
+                              }`}
+                            />
+                          </div>
 
-                        <div className="flex justify-between items-center mt-1">
-                          <span className="text-[8px] text-gray-400 font-medium">
-                            Limit: {target > 0 ? formatRupiah(target) : "-"}
-                          </span>
-                          {!isStrict && target > initialWeeklyLimit && w.id >= currentWeekIndex && (
-                            <span className="text-[7px] text-emerald-600 font-bold bg-emerald-100/60 px-1 rounded">
-                              +Bonus
-                            </span>
-                          )}
-                          {!isStrict && target < initialWeeklyLimit && w.id > currentWeekIndex && (
-                            <span className="text-[7px] text-amber-700 font-bold bg-amber-100/70 px-1 rounded" title="Jatah dipotong karena overbudget minggu sebelumnya">
-                              Disesuaikan
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Progress Bar Mini */}
-                        <div className="w-full h-1.5 bg-gray-200/80 rounded-full overflow-hidden mt-1">
-                          <div
-                            style={{ width: `${target > 0 ? pct : 0}%` }}
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              isOver ? "bg-red-500" : isWarning ? "bg-amber-500" : "bg-emerald-500"
-                            }`}
-                          />
-                        </div>
-
-                        {w.isCurrent && (
-                          <div className="mt-1 flex items-center justify-between text-[8px]">
-                            <span className="font-extrabold text-emerald-600 tracking-tight uppercase">
-                              Minggu Ini
-                            </span>
-                            {isOver ? (
-                              <span className="text-red-500 font-extrabold">
-                                Over +{formatRupiah(w.spent - target)}
+                          <div className="text-[10px] text-gray-500 leading-tight">
+                            {w.isCurrent && isOver ? (
+                              <span className="text-rose-600 font-medium">
+                                Batas: {formatRupiahShort(target)} • Over {formatRupiahShort(w.spent - target)}
+                              </span>
+                            ) : w.isCurrent ? (
+                              <span>
+                                Sisa: <strong className="font-semibold text-emerald-700">{formatRupiah(target - w.spent)}</strong>
+                              </span>
+                            ) : !isStrict && target !== initialWeeklyLimit ? (
+                              <span>
+                                Batas: <strong className="font-semibold text-gray-700">{formatRupiah(target)}</strong>
                               </span>
                             ) : (
-                              <span className="text-emerald-700 font-medium">
-                                Sisa {formatRupiah(target - w.spent)}
+                              <span>
+                                Batas: {target > 0 ? formatRupiah(target) : "-"}
                               </span>
                             )}
                           </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* REKOMENDASI ADAPTIF PEMAKAIAN SISA BULAN */}
+                {/* PANDUAN LIMIT ADAPTIF */}
                 {!isStrict && monthlyLimit > 0 && (
-                  <div className="mt-2.5 p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 text-emerald-950">
-                    <div className="flex items-start gap-2.5">
-                      <div className="p-1.5 rounded-xl bg-emerald-100 text-emerald-700 mt-0.5 flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.002 6.002 0 0 0-4-5.659V5a2 2 0 1 1 4 0v2.091a6.002 6.002 0 0 0 4 5.659v5.25m-4 0h.01M9 21h6" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
-                            Rekomendasi Pemakaian (Limit Adaptif)
-                          </span>
-                          <span className="text-[10px] font-extrabold text-emerald-800 bg-white/90 border border-emerald-200 px-2 py-0.5 rounded-lg shadow-2xs">
-                            Sisa Bulan Ini: {formatRupiah(remainingMonthlyBudgetRealtime)}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-emerald-800 leading-relaxed mt-1">
-                          {activeWeekData.spent > activeWeekTarget ? (
-                            <>
-                              Minggu {currentWeekIndex} telah melampaui limit (<span className="font-extrabold text-red-600">+{formatRupiah(activeWeekData.spent - activeWeekTarget)}</span>). 
-                              Agar total pengeluaran tidak melebihi <strong>{formatRupiah(monthlyLimit)}</strong>, sisa budget telah disesuaikan secara dinamis:
-                              <span className="block mt-1 font-extrabold text-emerald-950">
-                                👉 Jatah Minggu {Math.min(4, currentWeekIndex + 1)} s/d 4+: {formatRupiah(futureWeeklyLimit)}/minggu (sekitar {formatRupiah(Math.round(remainingMonthlyBudgetRealtime / Math.max(1, daysInCurrentMonth - daysPassed)))}/hari). Sisa Minggu 1: Rp 0 (stop jajan).
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              Pengeluaran minggu ini masih terkontrol dengan baik (tersisa <strong className="font-bold">{formatRupiah(activeWeekTarget - activeWeekData.spent)}</strong>). 
-                              Jatah aman untuk minggu berikutnya: <strong className="font-black text-emerald-950">{formatRupiah(futureWeeklyLimit)}/minggu</strong>.
-                            </>
-                          )}
-                        </p>
-                      </div>
+                  <div className="mt-2.5 p-3 rounded-xl bg-gray-50 border border-gray-200/70 text-gray-800 text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1.5">
+                      <span className="font-semibold text-gray-900">
+                        Panduan Anggaran Adaptif
+                      </span>
+                      <span className="text-[11px] font-medium text-gray-600">
+                        Sisa bulan ini: <strong className="text-emerald-700 font-bold">{formatRupiah(remainingMonthlyBudgetRealtime)}</strong>
+                      </span>
                     </div>
+
+                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                      {activeWeekData.spent > activeWeekTarget ? (
+                        <>
+                          Minggu {currentWeekIndex} telah melampaui batas awal (+{formatRupiah(activeWeekData.spent - activeWeekTarget)}). 
+                          Alokasi sisa Minggu {currentWeekIndex} adalah <strong>Rp 0</strong>. 
+                          Jatah aman untuk Minggu {Math.min(4, currentWeekIndex + 1)} s/d 4 adalah <strong className="text-gray-900 font-bold">{formatRupiah(futureWeeklyLimit)}/minggu</strong> (sekitar {formatRupiah(safeDailySpend)}/hari).
+                        </>
+                      ) : (
+                        <>
+                          Pengeluaran minggu ini masih terkontrol (sisa {formatRupiah(activeWeekTarget - activeWeekData.spent)}). 
+                          Jatah minggu berikutnya: <strong className="text-gray-900 font-bold">{formatRupiah(futureWeeklyLimit)}/minggu</strong>.
+                        </>
+                      )}
+                    </p>
                   </div>
                 )}
 
-                {/* PROYEKSI PENGELUARAN AKHIR BULAN (Forecasting Card) */}
+                {/* PROYEKSI PENGELUARAN AKHIR BULAN */}
                 {monthlyLimit > 0 && totalMonthlyExpense > 0 && (
-                  <div className={`mt-3 p-3 rounded-2xl border transition-all ${
+                  <div className={`mt-2.5 p-3 rounded-xl border text-xs transition-colors ${
                     isProjectedOverLimit 
-                      ? "bg-red-50/50 border-red-200 text-red-950" 
-                      : "bg-emerald-50/50 border-emerald-200 text-emerald-950"
+                      ? "bg-rose-50/40 border-rose-200/60 text-rose-950" 
+                      : "bg-gray-50 border-gray-200/70 text-gray-900"
                   }`}>
                     <div className="flex justify-between items-center mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-gray-600">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 0 5.814-5.518l2.74-1.22m0 0-3.976-1.536m3.976 1.536-1.536 3.976" />
-                        </svg>
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-700">
-                          Proyeksi Akhir Bulan (Forecasting)
-                        </span>
-                      </div>
-                      <span className="text-[9px] font-bold text-gray-600 bg-white/90 px-2 py-0.5 rounded-md border border-gray-200 shadow-2xs">
-                        Laju: {formatRupiah(dailyBurnRate)}/hari
+                      <span className="font-semibold text-gray-700">
+                        Proyeksi Akhir Bulan
+                      </span>
+                      <span className="text-[11px] text-gray-500 font-medium">
+                        Laju: {formatRupiah(dailyBurnRate)}/hari • {daysPassed}/{daysInCurrentMonth} hari
                       </span>
                     </div>
 
-                    <div className="flex justify-between items-baseline mt-1.5">
-                      <div>
-                        <p className="text-xs font-black text-gray-900">
-                          Estimasi Total: {formatRupiah(projectedMonthEndExpense)}
-                        </p>
-                        <p className="text-[10px] font-semibold mt-0.5 flex items-center gap-1">
-                          {isProjectedOverLimit ? (
-                            <span className="text-red-600 flex items-center gap-1">
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-red-500 flex-shrink-0">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                              </svg>
-                              <span>Berpotensi melampaui limit bulanan sebesar <span className="font-extrabold">+{formatRupiah(projectionDiff)}</span></span>
-                            </span>
-                          ) : (
-                            <span className="text-emerald-700 flex items-center gap-1">
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-emerald-600 flex-shrink-0">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-                              </svg>
-                              <span>Laju sangat baik! Diproyeksikan sisa/hemat <span className="font-extrabold">{formatRupiah(projectionDiff)}</span></span>
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <span className="text-[9px] text-gray-400 font-semibold flex-shrink-0">
-                        {daysPassed}/{daysInCurrentMonth} Hari Berlalu
-                      </span>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 mt-1">
+                      <p className="font-bold text-gray-900">
+                        Estimasi: {formatRupiah(projectedMonthEndExpense)}
+                      </p>
+                      <p className="text-[11px] font-medium">
+                        {isProjectedOverLimit ? (
+                          <span className="text-rose-600">
+                            Potensi melebihi batas: +{formatRupiah(projectionDiff)}
+                          </span>
+                        ) : (
+                          <span className="text-emerald-700">
+                            Sesuai target (hemat {formatRupiah(projectionDiff)})
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
                 )}
