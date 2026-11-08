@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../../lib/auth";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+import { invalidateSnapshots } from "../../../../lib/assetReport";
 
 export async function PUT(req, { params }) {
   try {
@@ -27,32 +28,43 @@ export async function PUT(req, { params }) {
         return NextResponse.json({ message: "Tagihan sudah dibayar bulan ini" }, { status: 400 });
       }
 
-      const account = await Account.findById(bill.accountId);
-      if (!account) {
+      const accountExists = await Account.exists({ _id: bill.accountId, userId: session.user.id });
+      if (!accountExists) {
         return NextResponse.json({ message: "Rekening pembayaran tidak ditemukan" }, { status: 404 });
       }
 
-      // 1. Kurangi saldo rekening
-      account.balance -= bill.amount;
-      await account.save();
+      // 1. Klaim tagihan secara atomik agar klik ganda tidak membayar dua kali
+      const paidAt = new Date();
+      const claimed = await Bill.findOneAndUpdate(
+        { _id: id, userId: session.user.id, status: { $ne: "PAID" } },
+        { $set: { status: "PAID", lastPaidDate: paidAt } },
+        { new: true }
+      );
+      if (!claimed) {
+        return NextResponse.json({ message: "Tagihan sudah dibayar bulan ini" }, { status: 400 });
+      }
 
-      // 2. Buat transaksi pengeluaran baru
-      const newTransaction = await Transaction.create({
-        userId: session.user.id,
-        accountId: bill.accountId,
-        type: "EXPENSE",
-        amount: bill.amount,
-        category: bill.category,
-        description: `Pembayaran Tagihan: ${bill.name}`,
-        date: new Date()
-      });
+      // 2. Catat transaksi & kurangi saldo secara atomik; batalkan klaim jika gagal
+      let newTransaction;
+      try {
+        newTransaction = await Transaction.create({
+          userId: session.user.id,
+          accountId: bill.accountId,
+          type: "EXPENSE",
+          amount: bill.amount,
+          category: bill.category,
+          description: `Pembayaran Tagihan: ${bill.name}`,
+          date: paidAt
+        });
+        await Account.updateOne({ _id: bill.accountId, userId: session.user.id }, { $inc: { balance: -bill.amount } });
+      } catch (err) {
+        if (newTransaction) await Transaction.deleteOne({ _id: newTransaction._id });
+        await Bill.updateOne({ _id: id }, { $set: { status: bill.status, lastPaidDate: bill.lastPaidDate } });
+        throw err;
+      }
+      await invalidateSnapshots(session.user.id, paidAt);
 
-      // 3. Update status tagihan
-      bill.status = "PAID";
-      bill.lastPaidDate = new Date();
-      await bill.save();
-
-      return NextResponse.json({ bill, transaction: newTransaction }, { status: 200 });
+      return NextResponse.json({ bill: claimed, transaction: newTransaction }, { status: 200 });
     } else {
       // Update biasa
       if (name) bill.name = name;

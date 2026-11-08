@@ -1,6 +1,6 @@
 import dbConnect from "../../../../lib/mongodb";
 import Transaction from "../../../../lib/models/Transaction";
-import Account from "../../../../lib/models/Account";
+import { applyEffects, balanceEffects, invalidateSnapshots } from "../../../../lib/assetReport";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../../lib/auth";
 import { NextResponse } from "next/server";
@@ -13,41 +13,17 @@ export async function DELETE(req, { params }) {
     const { id } = await params;
     await dbConnect();
 
-    // 1. Cari transaksi yang ingin dihapus
-    const transaction = await Transaction.findOne({ _id: id, userId: session.user.id });
+    // Hapus secara atomik: hanya satu request yang berhasil mengklaim transaksi ini,
+    // sehingga klik ganda tidak mengembalikan saldo dua kali.
+    const transaction = await Transaction.findOneAndDelete({ _id: id, userId: session.user.id });
     if (!transaction) {
       return NextResponse.json({ message: "Transaksi tidak ditemukan" }, { status: 404 });
     }
 
-    // 2. Cari akun terkait dan kembalikan saldonya
-    const account = await Account.findById(transaction.accountId);
-    const transactionAmount = Number(transaction.amount);
-
-    if (transaction.type === "TRANSFER") {
-      if (account) {
-        account.balance += transactionAmount; // Tambah kembali ke rekening asal
-        await account.save();
-      }
-      if (transaction.toAccountId) {
-        const destAccount = await Account.findById(transaction.toAccountId);
-        if (destAccount) {
-          destAccount.balance -= transactionAmount; // Kurangi dari rekening tujuan
-          await destAccount.save();
-        }
-      }
-    } else {
-      if (account) {
-        if (transaction.type === "INCOME") {
-          account.balance -= transactionAmount;
-        } else if (transaction.type === "EXPENSE") {
-          account.balance += transactionAmount;
-        }
-        await account.save();
-      }
-    }
-
-    // 4. Hapus transaksi dari database
-    await Transaction.deleteOne({ _id: id });
+    // Balikkan efek transaksi terhadap saldo (rekening yang sudah terhapus otomatis dilewati)
+    const reversed = balanceEffects(transaction).map((e) => ({ ...e, delta: -e.delta }));
+    await applyEffects(reversed, session.user.id);
+    await invalidateSnapshots(session.user.id, transaction.date);
 
     return NextResponse.json({ message: "Transaksi berhasil dihapus" }, { status: 200 });
   } catch (error) {

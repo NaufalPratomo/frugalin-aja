@@ -19,12 +19,35 @@ interface TransactionType {
   _id: string;
   accountId: string;
   toAccountId?: string;
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'ADJUSTMENT';
   amount: number;
   category: string;
   description: string;
   date: string;
 }
+
+type AssetByType = { BANK: number; CASH: number; INVESTMENT: number };
+interface AssetMonth {
+  month: number;
+  future: boolean;
+  isCurrent?: boolean;
+  total: number | null;
+  byType: AssetByType | null;
+  accounts: { id: string; name: string; type: string; balance: number }[];
+  delta: number | null;
+}
+interface AssetReport {
+  year: number;
+  months: AssetMonth[];
+  current: { total: number; byType: AssetByType };
+}
+
+const ASSET_COLORS: Record<keyof AssetByType, string> = {
+  BANK: "#3b82f6",
+  CASH: "#f59e0b",
+  INVESTMENT: "#8b5cf6",
+};
+const ASSET_LABELS: Record<keyof AssetByType, string> = { BANK: "Bank", CASH: "Cash", INVESTMENT: "Investasi" };
 
 interface BillType {
   _id: string;
@@ -247,6 +270,7 @@ export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [activeChartTab, setActiveChartTab] = useState<'flow' | 'assets'>('flow');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [assetReport, setAssetReport] = useState<AssetReport | null>(null);
   const [showBalance, setShowBalance] = useState(false);
 
   // Budgets state
@@ -354,6 +378,16 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchAssetReport = async (year: number = selectedYear) => {
+    try {
+      const res = await fetch(`/api/reports/assets?year=${year}`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data?.months)) setAssetReport(data);
+    } catch (e) {
+      console.error("Gagal memuat laporan total aset", e);
+    }
+  };
+
   const fetchData = async () => {
     try {
       const resAcc = await fetch("/api/accounts");
@@ -375,6 +409,7 @@ export default function DashboardPage() {
       const resTx = await fetch(`/api/transactions?year=${selectedYear}`);
       const dataTx = await resTx.json();
       if (Array.isArray(dataTx)) setTransactions(dataTx);
+      await fetchAssetReport();
 
       await fetchHistoryTransactions(1, false);
       setTxPage(1);
@@ -442,6 +477,7 @@ export default function DashboardPage() {
         }
       };
       fetchChartTx();
+      fetchAssetReport(selectedYear);
     }
   }, [selectedYear, status]);
 
@@ -1147,56 +1183,9 @@ export default function DashboardPage() {
     }
   });
 
-  // Perhitungan mundur Total Aset Gabungan per akhir bulan
-  const monthlyAssets = Array(12).fill(0);
-  const runningBalances: Record<string, number> = {};
-  accounts.forEach((acc) => {
-    runningBalances[acc._id] = Math.round(Number(acc.balance) || 0);
-  });
-
-  const sortedTx = [...transactions].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
-
-  const nowTime = new Date().getTime();
-  let txIndex = 0;
-
-  for (let m = 11; m >= 0; m--) {
-    const endOfMonth = new Date(selectedYear, m + 1, 0, 23, 59, 59, 999);
-    
-    if (endOfMonth.getTime() > nowTime) {
-      // Jika bulan ini di masa depan, isi dengan net worth saat ini
-      monthlyAssets[m] = Object.values(runningBalances).reduce((sum, bal) => sum + bal, 0);
-    } else {
-      // Revert transaksi yang terjadi SETELAH endOfMonth
-      while (txIndex < sortedTx.length) {
-        const tx = sortedTx[txIndex];
-        const txTime = new Date(tx.date).getTime();
-        
-        if (txTime > endOfMonth.getTime()) {
-          // Revert transaksi ini dari runningBalances
-          if (runningBalances[tx.accountId] !== undefined) {
-            const cleanAmount = Math.round(Number(tx.amount) || 0);
-            if (tx.type === "INCOME") {
-              runningBalances[tx.accountId] -= cleanAmount;
-            } else if (tx.type === "EXPENSE") {
-              runningBalances[tx.accountId] += cleanAmount;
-            } else if (tx.type === "TRANSFER") {
-              runningBalances[tx.accountId] += cleanAmount;
-              if (tx.toAccountId && runningBalances[tx.toAccountId] !== undefined) {
-                runningBalances[tx.toAccountId] -= cleanAmount;
-              }
-            }
-          }
-          txIndex++;
-        } else {
-          break;
-        }
-      }
-      
-      monthlyAssets[m] = Object.values(runningBalances).reduce((sum, bal) => sum + bal, 0);
-    }
-  }
+  // Total Aset per akhir bulan dihitung di server (/api/reports/assets)
+  const assetMonths: AssetMonth[] = assetReport && assetReport.year === selectedYear ? assetReport.months : [];
+  const monthlyAssets: (number | null)[] = Array.from({ length: 12 }, (_, i) => assetMonths[i]?.total ?? null);
 
   // Format rupiah terstandar (selalu integer bulat tanpa pecahan desimal/sen)
   const formatRupiah = (value: number) => {
@@ -1322,7 +1311,7 @@ export default function DashboardPage() {
   const chartHeight = svgHeight - paddingTop - paddingBottom;
 
   const maxFlow = Math.max(...monthlyIncome, ...monthlyExpense, 100000);
-  const maxAsset = Math.max(...monthlyAssets, 100000);
+  const maxAsset = Math.max(...monthlyAssets.map((v) => Math.max(0, v ?? 0)), 100000);
 
   const yMaxFlow = Math.ceil(maxFlow * 1.15);
   const yMaxAsset = Math.ceil(maxAsset * 1.15);
@@ -1332,22 +1321,33 @@ export default function DashboardPage() {
   const getYFlow = (val: number) => (svgHeight - paddingBottom) - (val / yMaxFlow) * chartHeight;
   const getYAsset = (val: number) => (svgHeight - paddingBottom) - (val / yMaxAsset) * chartHeight;
 
-  let assetPathD = "";
-  let assetAreaD = "";
-  for (let i = 0; i < 12; i++) {
-    const x = getX(i);
-    const y = getYAsset(monthlyAssets[i]);
-    if (i === 0) {
-      assetPathD += `M ${x} ${y}`;
-      assetAreaD += `M ${x} ${svgHeight - paddingBottom} L ${x} ${y}`;
-    } else {
-      assetPathD += ` L ${x} ${y}`;
-      assetAreaD += ` L ${x} ${y}`;
-    }
+  // Grafik Total Aset: area bertumpuk per tipe (Bank, Cash, Investasi). Bulan tanpa data (masa depan) tidak digambar.
+  const ASSET_ORDER: (keyof AssetByType)[] = ["BANK", "CASH", "INVESTMENT"];
+  const assetPointIdx: number[] = assetMonths
+    .map((m, i) => (m && m.total !== null && !m.future ? i : -1))
+    .filter((i) => i >= 0);
+  const stackedTops: Record<string, number[]> = {};
+  {
+    const cum = assetPointIdx.map(() => 0);
+    ASSET_ORDER.forEach((t) => {
+      stackedTops[t] = assetPointIdx.map((mi, k) => {
+        cum[k] += Math.max(0, assetMonths[mi].byType?.[t] ?? 0);
+        return cum[k];
+      });
+    });
   }
-  if (monthlyAssets.length > 0) {
-    assetAreaD += ` L ${getX(11)} ${svgHeight - paddingBottom} Z`;
-  }
+  const assetLayers = ASSET_ORDER.map((t, li) => {
+    if (assetPointIdx.length === 0) return { t, d: "" };
+    const top = assetPointIdx.map((mi, k) => `${getX(mi)} ${getYAsset(stackedTops[t][k])}`);
+    const bottomSrc = li === 0 ? null : stackedTops[ASSET_ORDER[li - 1]];
+    const bottom = assetPointIdx
+      .map((mi, k) => `${getX(mi)} ${getYAsset(bottomSrc ? bottomSrc[k] : 0)}`)
+      .reverse();
+    return { t, d: `M ${top.join(" L ")} L ${bottom.join(" L ")} Z` };
+  });
+  const assetTopLineD = assetPointIdx.length
+    ? "M " + assetPointIdx.map((mi, k) => `${getX(mi)} ${getYAsset(stackedTops.INVESTMENT[k])}`).join(" L ")
+    : "";
 
   const renderTransactionHistory = (customHeightClass: string) => {
     return (
@@ -1400,7 +1400,7 @@ export default function DashboardPage() {
               <div key={tx._id} className="flex justify-between items-center text-xs border-b border-gray-50/50 pb-2 hover:translate-x-1 hover:bg-gray-50/60 hover:shadow-[0_2px_8px_rgba(0,0,0,0.01)] rounded-xl p-2 transition-all duration-200 group">
                 <div className="flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    tx.type === "INCOME" ? "bg-green-500" : tx.type === "EXPENSE" ? "bg-red-500" : "bg-blue-500"
+                    tx.type === "INCOME" || (tx.type === "ADJUSTMENT" && tx.amount >= 0) ? "bg-green-500" : tx.type === "EXPENSE" || tx.type === "ADJUSTMENT" ? "bg-red-500" : "bg-blue-500"
                   }`} />
                   <div>
                     <h5 className="font-bold text-gray-950 leading-tight">
@@ -1415,8 +1415,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <p className={`font-bold ${tx.type === "INCOME" ? "text-green-600" : tx.type === "EXPENSE" ? "text-red-500" : "text-blue-600"}`}>
-                    {tx.type === "INCOME" ? "+" : tx.type === "EXPENSE" ? "-" : "⇄"} {formatRupiah(tx.amount)}
+                  <p className={`font-bold ${tx.type === "INCOME" || (tx.type === "ADJUSTMENT" && tx.amount >= 0) ? "text-green-600" : tx.type === "EXPENSE" || tx.type === "ADJUSTMENT" ? "text-red-500" : "text-blue-600"}`}>
+                    {tx.type === "INCOME" || (tx.type === "ADJUSTMENT" && tx.amount >= 0) ? "+" : tx.type === "EXPENSE" || tx.type === "ADJUSTMENT" ? "-" : "⇄"} {formatRupiah(Math.abs(tx.amount))}
                   </p>
                   <button
                     onClick={() => handleDeleteTransaction(tx._id)}
@@ -2106,6 +2106,29 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Ringkasan Total Aset */}
+            {activeChartTab === 'assets' && assetReport && (() => {
+              const cur = new Date();
+              const mi = selectedYear === cur.getFullYear() ? cur.getMonth() : 11;
+              const m = assetMonths[mi];
+              const delta = m?.delta ?? null;
+              return (
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-1 mb-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">
+                      {selectedYear === cur.getFullYear() ? "Total aset saat ini" : `Total aset akhir ${selectedYear}`}
+                    </p>
+                    <p className="text-xl font-black text-gray-900">{formatRupiah(m?.total ?? 0)}</p>
+                  </div>
+                  {delta !== null && (
+                    <p className={`text-xs font-bold pb-1 ${delta >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      {delta >= 0 ? "▲" : "▼"} {formatRupiah(Math.abs(delta))} dari bulan lalu
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* SVG Chart Container */}
             <div className="relative w-full overflow-visible select-none" onClick={() => setHoveredIndex(null)}>
               <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto">
@@ -2249,17 +2272,24 @@ export default function DashboardPage() {
                 {/* Render Asset Line & Area */}
                 {activeChartTab === 'assets' && (
                   <g>
-                    {/* Area under the line */}
+                    {/* Area bertumpuk per tipe aset */}
+                    {assetLayers.map((layer) => (
+                      <path
+                        key={layer.t}
+                        d={layer.d}
+                        fill={ASSET_COLORS[layer.t]}
+                        fillOpacity={0.28}
+                        stroke={ASSET_COLORS[layer.t]}
+                        strokeOpacity={0.55}
+                        strokeWidth={1}
+                        className="transition-all duration-500"
+                      />
+                    ))}
+                    {/* Garis total */}
                     <path
-                      d={assetAreaD}
-                      fill="url(#assetGradient)"
-                      className="transition-all duration-500"
-                    />
-                    {/* Line path */}
-                    <path
-                      d={assetPathD}
+                      d={assetTopLineD}
                       fill="none"
-                      stroke="#3b82f6"
+                      stroke="#1d4ed8"
                       strokeWidth={2.5}
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -2267,8 +2297,9 @@ export default function DashboardPage() {
                     />
                     {/* Dots at months */}
                     {monthlyAssets.map((asset, i) => {
+                      if (asset === null) return null;
                       const x = getX(i);
-                      const y = getYAsset(asset);
+                      const y = getYAsset(Math.max(0, asset));
                       return (
                         <g key={i}>
                           <circle
@@ -2334,11 +2365,30 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-1 text-[10px]">
-                      <p className="text-blue-600 font-black flex items-center justify-between gap-4">
-                        <span>Total Aset:</span>
-                        <span>{formatRupiah(monthlyAssets[hoveredIndex])}</span>
+                    <div className="space-y-1 text-[10px] min-w-[170px]">
+                      <p className="text-blue-700 font-black flex items-center justify-between gap-4">
+                        <span>Total Aset{assetMonths[hoveredIndex]?.isCurrent ? " (saat ini)" : ""}:</span>
+                        <span>{formatRupiah(monthlyAssets[hoveredIndex] ?? 0)}</span>
                       </p>
+                      {assetMonths[hoveredIndex]?.delta != null && (
+                        <p className={`${(assetMonths[hoveredIndex].delta as number) >= 0 ? "text-green-600" : "text-red-500"} font-bold flex items-center justify-between gap-4`}>
+                          <span>vs bulan lalu:</span>
+                          <span>
+                            {(assetMonths[hoveredIndex].delta as number) >= 0 ? "+" : "-"}
+                            {formatRupiah(Math.abs(assetMonths[hoveredIndex].delta as number))}
+                          </span>
+                        </p>
+                      )}
+                      <div className="border-t border-gray-100 my-1" />
+                      {(Object.keys(ASSET_COLORS) as (keyof AssetByType)[]).map((t) => (
+                        <p key={t} className="text-gray-600 font-semibold flex items-center justify-between gap-4">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: ASSET_COLORS[t] }} />
+                            {ASSET_LABELS[t]}
+                          </span>
+                          <span>{formatRupiah(assetMonths[hoveredIndex]?.byType?.[t] ?? 0)}</span>
+                        </p>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2359,10 +2409,18 @@ export default function DashboardPage() {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-full" />
-                  <span>Total Aset Gabungan</span>
-                </div>
+                <>
+                  {(Object.keys(ASSET_COLORS) as (keyof AssetByType)[]).map((t) => (
+                    <div key={t} className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ASSET_COLORS[t] }} />
+                      <span>{ASSET_LABELS[t]}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0.5 bg-blue-700 rounded-full" />
+                    <span>Total Aset</span>
+                  </div>
+                </>
               )}
             </div>
 
@@ -2762,7 +2820,8 @@ export default function DashboardPage() {
             <form onSubmit={handleUpdateBalanceDirectly} className="space-y-3 text-xs">
               <div>
                 <label className="block mb-1 font-semibold text-gray-600">Nominal Saldo Terbaru (Rp)</label>
-                <input required type="number" value={newBalanceValue} onChange={e => setNewBalanceValue(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold text-green-600 focus:outline-none focus:border-green-500 text-black" />
+                <input required type="number" inputMode="numeric" step="1" value={newBalanceValue} onChange={e => setNewBalanceValue(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm font-bold text-green-600 focus:outline-none focus:border-green-500 text-black" />
+                <p className="text-[10px] text-gray-400 mt-1">Ketik angka tanpa titik/koma. Terbaca sebagai: <span className="font-bold text-gray-600">{formatRupiah(Number(newBalanceValue))}</span></p>
               </div>
               {selectedAccType === "BANK" && (
                 <div className="animate-in slide-in-from-top-2 duration-200">

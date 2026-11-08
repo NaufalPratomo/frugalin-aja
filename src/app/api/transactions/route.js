@@ -1,10 +1,13 @@
 import dbConnect from "../../../lib/mongodb";
 import Transaction from "../../../lib/models/Transaction";
 import Account from "../../../lib/models/Account";
+import { applyEffects, balanceEffects, invalidateSnapshots } from "../../../lib/assetReport";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../lib/auth";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+
+const USER_TX_TYPES = ["INCOME", "EXPENSE", "TRANSFER"];
 
 export async function GET(req) {
   try {
@@ -18,7 +21,7 @@ export async function GET(req) {
     const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")) : 20;
 
     await dbConnect();
-    
+
     let query = { userId: session.user.id };
     if (month && year) {
       const m = parseInt(month);
@@ -55,6 +58,12 @@ export async function POST(req) {
     if (!accountId || !type || !amount || !category) {
       return NextResponse.json({ message: "Field wajib tidak boleh kosong" }, { status: 400 });
     }
+    if (!USER_TX_TYPES.includes(type)) {
+      return NextResponse.json({ message: "Tipe transaksi tidak valid" }, { status: 400 });
+    }
+    if (!mongoose.isValidObjectId(accountId) || (toAccountId && !mongoose.isValidObjectId(toAccountId))) {
+      return NextResponse.json({ message: "ID rekening tidak valid" }, { status: 400 });
+    }
 
     if (type === "TRANSFER") {
       if (!toAccountId) {
@@ -65,64 +74,50 @@ export async function POST(req) {
       }
     }
 
+    const transactionAmount = Math.round(Number(amount));
+    if (!Number.isFinite(transactionAmount) || transactionAmount <= 0) {
+      return NextResponse.json({ message: "Nominal transaksi tidak valid" }, { status: 400 });
+    }
+
+    const txDate = date ? new Date(date) : new Date();
+    if (isNaN(txDate.getTime())) {
+      return NextResponse.json({ message: "Tanggal tidak valid" }, { status: 400 });
+    }
+
     await dbConnect();
 
-    const targetAccountId = new mongoose.Types.ObjectId(accountId);
-    const account = await Account.findById(targetAccountId);
+    // Pastikan rekening milik user yang sedang login
+    const account = await Account.findOne({ _id: accountId, userId: session.user.id });
     if (!account) {
       return NextResponse.json({ message: "Akun bank asal tidak ditemukan" }, { status: 404 });
     }
-
-    const transactionAmount = Math.round(Number(amount));
-    if (isNaN(transactionAmount) || transactionAmount <= 0) {
-      return NextResponse.json({ message: "Nominal transaksi tidak valid" }, { status: 400 });
-    }
-    let newTransaction;
-
     if (type === "TRANSFER") {
-      const destAccountId = new mongoose.Types.ObjectId(toAccountId);
-      const destAccount = await Account.findById(destAccountId);
-      if (!destAccount) {
+      const dest = await Account.exists({ _id: toAccountId, userId: session.user.id });
+      if (!dest) {
         return NextResponse.json({ message: "Akun bank tujuan tidak ditemukan" }, { status: 404 });
       }
-
-      // Simpan data transaksi transfer
-      newTransaction = await Transaction.create({
-        userId: session.user.id,
-        accountId: targetAccountId,
-        toAccountId: destAccountId,
-        type,
-        amount: transactionAmount,
-        category,
-        description,
-        date: date || new Date()
-      });
-
-      // Update saldo kedua akun
-      account.balance -= transactionAmount;
-      destAccount.balance += transactionAmount;
-
-      await account.save();
-      await destAccount.save();
-    } else {
-      let change = type === "INCOME" ? transactionAmount : -transactionAmount;
-
-      // Simpan data transaksi
-      newTransaction = await Transaction.create({
-        userId: session.user.id,
-        accountId: targetAccountId,
-        type,
-        amount: transactionAmount,
-        category,
-        description,
-        date: date || new Date()
-      });
-
-      // Jalankan kalkulasi update saldo dompet/bank terkait
-      account.balance += change;
-      await account.save();
     }
 
+    const newTransaction = await Transaction.create({
+      userId: session.user.id,
+      accountId: account._id,
+      ...(type === "TRANSFER" ? { toAccountId } : {}),
+      type,
+      amount: transactionAmount,
+      category,
+      description,
+      date: txDate
+    });
+
+    // Saldo diubah secara atomik ($inc); jika gagal, transaksi dibatalkan
+    try {
+      await applyEffects(balanceEffects(newTransaction), session.user.id);
+    } catch (err) {
+      await Transaction.deleteOne({ _id: newTransaction._id });
+      throw err;
+    }
+
+    await invalidateSnapshots(session.user.id, txDate);
     return NextResponse.json(newTransaction, { status: 201 });
   } catch (error) {
     return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
