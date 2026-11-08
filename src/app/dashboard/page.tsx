@@ -1313,8 +1313,27 @@ export default function DashboardPage() {
   const maxFlow = Math.max(...monthlyIncome, ...monthlyExpense, 100000);
   const maxAsset = Math.max(...monthlyAssets.map((v) => Math.max(0, v ?? 0)), 100000);
 
-  const yMaxFlow = Math.ceil(maxFlow * 1.15);
-  const yMaxAsset = Math.ceil(maxAsset * 1.15);
+  // Skala sumbu Y dibulatkan ke kelipatan 1/2/5 x 10^n agar label rapi (0, 5Jt, 10Jt, ...)
+  const niceMax = (max: number) => {
+    const rawStep = max / 3;
+    const pow = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / pow;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * pow;
+    return step * 3;
+  };
+  const yMaxFlow = niceMax(maxFlow);
+  const yMaxAsset = niceMax(maxAsset);
+
+  // Perubahan bulanan terbesar (turun) tahun ini, untuk anotasi di grafik
+  let spikeIdx = -1;
+  assetMonths.forEach((m, i) => {
+    if (m && m.delta !== null && m.delta < 0 && (spikeIdx < 0 || m.delta < (assetMonths[spikeIdx].delta as number))) spikeIdx = i;
+  });
+  const spikeMonth = spikeIdx >= 0 ? assetMonths[spikeIdx] : null;
+  const showSpike =
+    !!spikeMonth &&
+    spikeMonth.total !== null &&
+    Math.abs(spikeMonth.delta as number) >= 0.2 * (spikeMonth.total + Math.abs(spikeMonth.delta as number));
 
   const getX = (index: number) => paddingLeft + (index * chartWidth) / 11;
   const getXBar = (index: number) => paddingLeft + (index * chartWidth / 12) + (chartWidth / 24);
@@ -1605,48 +1624,57 @@ export default function DashboardPage() {
 
           {/* DOMPET & REKENING BERJALAN */}
           <div className="w-full">
-            <h3 className="font-bold text-gray-900 mb-3 text-sm">Dompet & Rekening Berjalan ({accounts.length})</h3>
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="font-bold text-gray-900 text-sm">Dompet & Rekening Berjalan ({accounts.length})</h3>
+              <p className="text-xs text-gray-500 font-semibold">
+                Total <span className="text-gray-900 font-extrabold">{formatRupiah(accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0))}</span>
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {accounts.map((acc) => (
-                <div key={acc._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center group hover:border-green-200 transition-all">
-                  <div>
-                    <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold ${
-                      acc.type === "BANK" ? "bg-blue-55 text-blue-600" :
-                      acc.type === "INVESTMENT" ? "bg-purple-55 text-purple-600" : "bg-amber-55 text-amber-600"
-                    }`}>
-                      {acc.type}
-                    </span>
-                    <h4 className="font-bold text-gray-900 mt-1 text-sm">{acc.name}</h4>
-                    {acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0 ? (
-                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1 bg-red-50/50 px-2 py-0.5 rounded-md w-fit">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-red-400 animate-pulse">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clipRule="evenodd" />
+              {[...accounts].sort((a, b) => (Number(b.balance) || 0) - (Number(a.balance) || 0)).map((acc) => {
+                const typeKey = acc.type as keyof AssetByType;
+                const isEmpty = !acc.balance;
+                const openEdit = () => {
+                  setSelectedAccId(acc._id);
+                  setSelectedAccName(acc.name);
+                  setSelectedAccType(acc.type);
+                  setNewBalanceValue(acc.balance.toString());
+                  setNewInterestValue((acc.monthlyInterest || 0).toString());
+                  setShowEditBalanceModal(true);
+                };
+                return (
+                  <div
+                    key={acc._id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={openEdit}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(); } }}
+                    title="Ketuk untuk menyesuaikan saldo"
+                    className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center group hover:border-green-200 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                  >
+                    <div>
+                      <span className="flex items-center gap-1.5 text-[11px] font-bold text-gray-600">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ASSET_COLORS[typeKey] ?? "#9ca3af" }} />
+                        {ASSET_LABELS[typeKey] ?? acc.type}
+                      </span>
+                      <h4 className={`font-bold mt-1 text-sm ${isEmpty ? "text-gray-500" : "text-gray-900"}`}>{acc.name}</h4>
+                      {acc.type === "BANK" && acc.monthlyInterest && acc.monthlyInterest > 0 ? (
+                        <p className="text-[11px] text-amber-700 font-semibold mt-1 bg-amber-50 px-2 py-0.5 rounded-md w-fit">
+                          Bunga {formatRupiah(acc.monthlyInterest)}/bln
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="text-right flex items-center gap-2">
+                      <p className={`text-sm ${isEmpty ? "font-medium text-gray-400" : "font-extrabold text-gray-900"}`}>{formatRupiah(acc.balance)}</p>
+                      <span className="text-gray-500 group-hover:text-green-600 p-2 rounded-lg bg-gray-50 group-hover:bg-green-50 transition-all flex items-center justify-center" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                         </svg>
-                        Bunga: {formatRupiah(acc.monthlyInterest)}/bln
-                      </p>
-                    ) : null}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right flex items-center gap-2">
-                    <p className="font-extrabold text-sm text-gray-900">{formatRupiah(acc.balance)}</p>
-                    <button 
-                      onClick={() => {
-                        setSelectedAccId(acc._id);
-                        setSelectedAccName(acc.name);
-                        setSelectedAccType(acc.type);
-                        setNewBalanceValue(acc.balance.toString());
-                        setNewInterestValue((acc.monthlyInterest || 0).toString());
-                        setShowEditBalanceModal(true);
-                      }}
-                      className="text-gray-400 hover:text-green-600 p-1.5 rounded-md hover:bg-gray-50 transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-gray-100"
-                      title="Sesuaikan/Update Saldo"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -2140,7 +2168,7 @@ export default function DashboardPage() {
                 </defs>
 
                 {/* Horizontal Grid Lines & Y Axis Labels */}
-                {[0, 0.33, 0.66, 1].map((ratio, index) => {
+                {[0, 1 / 3, 2 / 3, 1].map((ratio, index) => {
                   const valFlow = yMaxFlow * ratio;
                   const valAsset = yMaxAsset * ratio;
                   const y = (svgHeight - paddingBottom) - ratio * chartHeight;
@@ -2159,7 +2187,7 @@ export default function DashboardPage() {
                         x={paddingLeft - 8}
                         y={y + 4}
                         textAnchor="end"
-                        className="text-[9px] fill-gray-400 font-semibold font-mono"
+                        className="text-[10px] fill-gray-500 font-semibold font-mono"
                       >
                         {formatRupiahShort(activeChartTab === 'flow' ? valFlow : valAsset)}
                       </text>
@@ -2182,7 +2210,7 @@ export default function DashboardPage() {
                           ? activeChartTab === 'flow'
                             ? 'fill-emerald-600 font-black'
                             : 'fill-blue-600 font-black'
-                          : 'fill-gray-400 font-bold'
+                          : 'fill-gray-500 font-bold'
                       }`}
                       style={{
                         fontSize: isHovered ? '10px' : '9px'
@@ -2305,12 +2333,23 @@ export default function DashboardPage() {
                           <circle
                             cx={x}
                             cy={y}
-                            r={hoveredIndex === i ? 5 : 3.5}
-                            fill={hoveredIndex === i ? "#3b82f6" : "#ffffff"}
-                            stroke="#3b82f6"
+                            r={hoveredIndex === i ? 5 : assetMonths[i]?.isCurrent ? 5 : 3}
+                            fill={hoveredIndex === i || assetMonths[i]?.isCurrent ? "#1d4ed8" : "#ffffff"}
+                            stroke="#1d4ed8"
                             strokeWidth={2.5}
                             className="transition-all duration-200 cursor-pointer"
                           />
+                          {showSpike && spikeIdx === i && (
+                            <text
+                              x={Math.min(Math.max(x, paddingLeft + 40), svgWidth - paddingRight - 40)}
+                              y={Math.max(y - 14, paddingTop + 8)}
+                              textAnchor="middle"
+                              className="text-[9px] font-bold fill-red-600"
+                              style={{ paintOrder: "stroke", stroke: "#ffffff", strokeWidth: 3 }}
+                            >
+                              {`−${formatRupiahShort(Math.abs(assetMonths[i].delta as number))} terbesar`}
+                            </text>
+                          )}
                           {/* Invisible hover area */}
                           <rect
                             x={x - (chartWidth / 22)}
